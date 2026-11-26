@@ -1,5 +1,4 @@
 let adminToken = '';
-let pendingAdminLogin;
 const sitesOrigin = 'https://tenmonken-infoweb-2026.rt-earth616.chatgpt.site';
 async function pagesFetch(input, options = {}) {
   const url = new URL(input,location.href);
@@ -9,26 +8,30 @@ async function pagesFetch(input, options = {}) {
   return fetch(input,{...options,headers,credentials:'omit',redirect:'error'});
 }
 function bindPagesLogin(form, onSuccess) {
-  form.innerHTML='<h1>運営ログイン</h1><button type="submit" class="primary">Sitesで認証する</button><p id="err" role="status"></p>';
   form.hidden=false;
-  form.onsubmit=event=>{
+  form.onsubmit=async event=>{
     event.preventDefault();
-    const channel=crypto.randomUUID();
-    const popup=window.open(sitesOrigin+'/_pages-admin-login?channel='+encodeURIComponent(channel),'hercules-admin-auth','popup,width=480,height=540');
-    if(!popup){form.querySelector('#err').textContent='認証ウィンドウを開けませんでした。ポップアップの設定をご確認ください。';return;}
-    pendingAdminLogin={channel,popup,onSuccess};
+    const button=form.querySelector('button');
+    const field=form.querySelector('input');
+    const status=form.querySelector('#err');
+    const phrase=field.value;
+    field.value='';
+    status.textContent='';
+    button.disabled=true;
+    try{
+      const response=await fetch(sitesOrigin+'/_pages-admin-login',{
+        method:'POST',credentials:'omit',redirect:'error',cache:'no-store',
+        headers:{'Content-Type':'application/json'},body:JSON.stringify({phrase})
+      });
+      const value=await response.json();
+      if(!response.ok)throw Error(value.error||'認証できませんでした。');
+      if(!/^\d{10}\.[a-f0-9-]{36}\.[a-f0-9]{64}$/.test(value.token||''))throw Error('認証結果を確認できませんでした。');
+      adminToken=value.token;
+      onSuccess();
+    }catch(error){adminToken='';status.textContent=error.message;field.focus();}
+    finally{button.disabled=false;}
   };
 }
-window.addEventListener('message', async event=>{
-  const pending=pendingAdminLogin;
-  if(!pending||event.origin!==sitesOrigin||event.source!==pending.popup||event.data?.type!=='hercules-admin-session'||event.data.channel!==pending.channel||
-    !/^\d{10}\.[a-f0-9-]{36}\.[a-f0-9]{64}$/.test(event.data.token))return;
-  pendingAdminLogin=null;
-  adminToken=event.data.token;
-  const response=await pagesFetch(sitesOrigin+'/api/admin/session');
-  if(response.ok)pending.onSuccess();
-  else{adminToken='';const error=document.getElementById('err');if(error)error.textContent='運営セッションを開けませんでした。';}
-});
 document.addEventListener('click', event=>{
   const link=event.target.closest('a[href]');
   if(event.defaultPrevented||event.button!==0||event.metaKey||event.ctrlKey||event.altKey||event.shiftKey||!link||link.target)return;
