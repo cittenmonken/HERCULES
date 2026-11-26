@@ -1,1 +1,3 @@
-IyBIRVJDVUxFUwoKQ0lUIFRFTk1PTiBBc3Ryb25vbXkgQ2x1Yi4K
+# ヘラクレス
+
+千葉工業大学 文化会 天文研究部の部内情報サイトです。
