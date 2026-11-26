@@ -2372,7 +2372,17 @@ document.addEventListener('change',event=>{
 });
 (async()=>{if(document.documentElement.hasAttribute('data-meeting-offline')){renderOfflineMeeting();return;}const path=pagePath().replace(/\/$/,'');const section=path.slice(7);if(path==='/admin'||(path.startsWith('/admin/')&&Object.hasOwn(adminPages,section)))admin(path==='/admin'?'':section);else if(path==='/chat')renderChat();else if(path==='/ikenbako')renderFeedback();else if(path==='/calendar')renderCalendar();else if(path==='/planet-calendar')renderPlanetCalendar();else if(path==='/members')renderMembers();else if(path==='/procedures')renderProcedures();else if(path==='/space-quiz')renderQuiz();else if(path==='/guide'||path==='/guide/home-screen'||(path.startsWith('/guide/home-screen/')&&(Object.hasOwn(guideDevices,path.slice('/guide/home-screen/'.length))||Object.hasOwn(homeScreenGuides,path.slice('/guide/home-screen/'.length)))))renderGuide(path);else if(path==='/inventory')renderInventory();else if(path==='/records')renderRecords();else if(path==='/external-services')renderExternalServices();else{
   const started=Date.now();
-  const [loaded]=await Promise.all([loadSettings(),loadCountdowns()]);
+  const loaded=await (async()=>{
+    try {
+      const response=await pagesFetch('https://tenmonken-infoweb-2026.rt-earth616.chatgpt.site/api/home');
+      if(!response.ok)throw Error('Homepage request failed');
+      const snapshot=await response.json();
+      if(Array.isArray(snapshot.countdowns))countdowns=snapshot.countdowns;
+      if(snapshot.settings){data={...data,...snapshot.settings};if(!Array.isArray(snapshot.countdowns))await loadCountdowns();return true;}
+    }catch{}
+    const [settingsLoaded]=await Promise.all([loadSettings(),loadCountdowns()]);
+    return settingsLoaded;
+  })();
   render();
   if(isWebApp()&&loaded)saveObservation();
   if(new URLSearchParams(location.search).get('notice')==='meeting'){
