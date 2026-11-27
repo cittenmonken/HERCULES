@@ -1218,8 +1218,8 @@ function photoGallery(){
     <form id="galleryUpload" class="ops-card">
       <h2>写真を追加</h2>
       <p class="hint">投稿した写真は、ギャラリーのURLを知っている人が閲覧できます。</p>
-      <div class="field"><label for="galleryFiles">写真（1回6枚まで）</label><input id="galleryFiles" style="width:100%;min-width:0" type="file" accept="image/*" multiple required></div>
-      <div class="field"><label for="galleryTags">選んだ写真に付けるタグ</label><input id="galleryTags" placeholder="例　観測会、茜浜" aria-describedby="galleryTagHelp"><small id="galleryTagHelp">複数のタグは読点またはカンマで区切ります。</small></div>
+      <div class="field"><label for="galleryFiles">写真（1回10枚まで）</label><input id="galleryFiles" style="width:100%;min-width:0" type="file" accept="image/*" multiple required></div>
+      <div class="field"><label for="galleryTags">選んだ写真に付けるタグ</label><input id="galleryTags" placeholder="例　観測会、茜浜" aria-describedby="galleryTagHelp"><small id="galleryTagHelp">複数のタグは読点またはカンマで区切ります。</small><div id="galleryTagChoices" class="feature-links" aria-label="既存のタグ"></div></div>
       <button type="submit" class="primary">投稿</button>
       <p id="galleryUploadStatus" role="status"></p>
       <div id="galleryUploadProgress" hidden><progress aria-label="写真の投稿"></progress> <output id="galleryUploadElapsed" aria-live="off"></output></div>
@@ -1231,6 +1231,10 @@ function photoGallery(){
     <p id="galleryStatus" role="status"></p>
     <div id="galleryList" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,140px),1fr));gap:12px"></div>
     <button class="secondary" id="galleryMore" type="button" hidden>もっと見る</button>
+    <dialog id="galleryViewer" class="ops-card edit-dialog" aria-label="拡大写真" style="width:min(92vw,960px);max-width:92vw">
+      <form method="dialog"><button class="secondary" type="submit">閉じる</button></form>
+      <img id="galleryViewerImage" style="display:block;width:100%;max-height:75dvh;object-fit:contain;margin-top:12px" alt="">
+    </dialog>
   </section>`;
 }
 function renderPhotos(){
@@ -1255,12 +1259,15 @@ function initPhotoGallery(manage=false){
       const page=await api('photos?'+params);
       if(request!==revision||!list.isConnected)return;
       next=page.next;
+      if(Array.isArray(page.tags)){
+        choices.innerHTML=page.tags.map(label=>`<button class="secondary" type="button" data-gallery-choice="${esc(label)}">${esc(label)}</button>`).join('');
+      }
       if(!append)list.replaceChildren();
       list.insertAdjacentHTML('beforeend',page.photos.map(photo=>{
         const url=sitesOrigin+'/api/photos/'+encodeURIComponent(photo.id);
         const tags=photo.tags.map(label=>`<button class="secondary" type="button" data-gallery-tag="${esc(label)}">${esc(label)}</button>`).join('');
         return `<article class="ops-card" style="padding:8px;min-width:0">
-          <a href="${url}" target="_blank" rel="noopener noreferrer"><img src="${url}" alt="${esc(photo.tags.join('、')||'部活動の写真')}" loading="lazy" decoding="async" style="display:block;width:100%;aspect-ratio:4/3;object-fit:cover;border-radius:9px"></a>
+          <button class="secondary" type="button" data-gallery-view aria-label="写真を拡大" style="display:block;width:100%;padding:0;border:0"><img src="${url}" alt="${esc(photo.tags.join('、')||'部活動の写真')}" loading="lazy" decoding="async" style="display:block;width:100%;aspect-ratio:4/3;object-fit:cover;border-radius:9px"></button>
           <div class="feature-links" style="margin-top:6px;overflow-wrap:anywhere">${tags}${manage?`<button class="secondary" type="button" data-gallery-delete="${esc(photo.id)}">削除</button>`:''}</div>
         </article>`;
       }).join(''));
@@ -1276,7 +1283,17 @@ function initPhotoGallery(manage=false){
   filter.onsubmit=event=>{event.preventDefault();applyTag(search.value);};
   filter.onreset=event=>{event.preventDefault();applyTag('');};
   more.onclick=()=>void load(true);
+  const viewer=byId('galleryViewer'), enlarged=byId('galleryViewerImage');
+  viewer.addEventListener('close',()=>enlarged.removeAttribute('src'));
   list.onclick=async event=>{
+    const preview=event.target.closest('[data-gallery-view]');
+    if(preview){
+      const image=preview.querySelector('img');
+      enlarged.src=image.src;
+      enlarged.alt=image.alt;
+      viewer.showModal();
+      return;
+    }
     const chip=event.target.closest('[data-gallery-tag]');
     if(chip){applyTag(chip.dataset.galleryTag);return;}
     const remove=event.target.closest('[data-gallery-delete]');
@@ -1288,12 +1305,23 @@ function initPhotoGallery(manage=false){
   };
   const form=byId('galleryUpload'), input=byId('galleryFiles'), labels=byId('galleryTags'), result=byId('galleryUploadStatus');
   const button=form.querySelector('button[type="submit"]');
+  const choices=byId('galleryTagChoices');
+  const selectedTags=()=>[...new Set(labels.value.split(/[,、，]/).map(value=>value.trim()).filter(Boolean))];
+  choices.onclick=event=>{
+    const choice=event.target.closest('[data-gallery-choice]');
+    if(!choice||labels.disabled)return;
+    const tag=choice.dataset.galleryChoice, tags=selectedTags();
+    if(tags.includes(tag))return;
+    if(tags.length>=12){result.textContent='タグは12個まで選べます。';return;}
+    labels.value=[...tags,tag].join('、');
+    result.textContent='';
+  };
   let selection=[];
   input.onchange=()=>{selection=Array.from(input.files,file=>({file,id:crypto.randomUUID()}));};
   form.onsubmit=async event=>{
     event.preventDefault();
-    const tags=[...new Set(labels.value.split(/[,、，]/).map(value=>value.trim()).filter(Boolean))];
-    if(!selection.length||selection.length>6){result.textContent='写真を1〜6枚選んでください。';return;}
+    const tags=selectedTags();
+    if(!selection.length||selection.length>10){result.textContent='写真を1〜10枚選んでください。';return;}
     if(tags.length>12||tags.some(value=>value.length>40)){result.textContent='タグは12個まで、1個40文字以内で入力してください。';return;}
     button.disabled=input.disabled=labels.disabled=true;
     const progress=byId('galleryUploadProgress'), output=byId('galleryUploadElapsed');
