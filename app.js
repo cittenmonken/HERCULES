@@ -1310,7 +1310,7 @@ function photoGallery(manage=false){
       <div style="display:flex;align-items:center;gap:8px;flex:1 1 180px;min-width:0"><label for="gallerySearch">タグ</label><input id="gallerySearch" type="search" maxlength="40" placeholder="タグで絞り込む" style="min-width:0;flex:1"></div>
       <div style="display:flex;gap:8px;margin-left:auto"><button class="primary" type="submit">検索</button><button class="secondary" type="reset">解除</button></div>
     </form>
-    <div id="gallerySearchTags" class="feature-links" aria-label="検索に使える既存タグ"></div><p id="galleryTagHint" class="hint" hidden>複数選択できます。選んだタグをすべて含む写真を表示します。</p>
+    <div id="gallerySearchTags" class="feature-links" aria-label="検索に使える既存タグ"></div><p id="galleryTagHint" class="hint" hidden>複数選択できます。選んだタグのうち、どれか1つでも付いている写真を表示します。</p>
     <p id="galleryStatus" role="status"></p>
     <div id="galleryList" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,140px),1fr));gap:12px"></div>
     <button class="secondary" id="galleryMore" type="button" hidden>もっと見る</button>
