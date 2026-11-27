@@ -51,19 +51,20 @@ self.addEventListener('push',event=>{
   const id=noticeId.test(payload?.id)?payload.id:crypto.randomUUID();
   const notices={
     meeting:['観測会の情報が更新されました。','/HERCULES/?notice=meeting'],
-    announcement:['運営からのお知らせが更新されました。','/HERCULES/?notice=meeting'],
+    announcement:['運営からのお知らせが更新されました。','/HERCULES/?notice=announcement'],
     chat:['チャットに新しい投稿があります。','/HERCULES/chat'],
     inventory:['物品管理が更新されました。','/HERCULES/inventory'],
     members:['部員統計が更新されました。','/HERCULES/members'],
     records:['実績・記録が更新されました。','/HERCULES/records']
   };
-  const [body,url]=Object.hasOwn(notices,payload?.kind)?notices[payload.kind]:notices.announcement;
+  const [fallback,url]=Object.hasOwn(notices,payload?.kind)?notices[payload.kind]:notices.announcement;
+  const body=payload?.kind==='announcement'&&typeof payload.message==='string'&&payload.message.trim()?payload.message:fallback;
   const received=Date.now();
   event.waitUntil((async()=>{
     await self.registration.showNotification('ヘラクレス',{
       body,icon:'/HERCULES/hercules-192.png',tag:id,data:{url}
     });
-    await updateUnread(cache=>cache.put(unreadPath+id,new Response('',{headers:{'x-hercules-received':String(received)}})));
+    await updateUnread(cache=>cache.put(unreadPath+id,new Response('',{headers:{'x-hercules-received':String(received),'x-hercules-kind':payload?.kind||''}})));
   })());
 });
 self.addEventListener('message',event=>{
@@ -72,11 +73,11 @@ self.addEventListener('message',event=>{
   if(!port)return;
   event.waitUntil(updateUnread(async cache=>{
     if(event.data.type!=='read-notices')return;
-    const readBefore=Number(event.data.readBefore);
+    const readBefore=Number(event.data.readBefore), kind=event.data.kind;
     if(!Number.isFinite(readBefore))return;
     for(const request of await cache.keys()){
       const entry=await cache.match(request);
-      if(Number(entry?.headers.get('x-hercules-received'))<=readBefore)await cache.delete(request);
+      if(entry&&(!kind||entry.headers.get('x-hercules-kind')===kind)&&Number(entry.headers.get('x-hercules-received'))<=readBefore)await cache.delete(request);
     }
   }).then(count=>port.postMessage({count}),()=>port.postMessage({error:true})));
 });
