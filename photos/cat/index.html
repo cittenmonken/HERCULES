@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex">
+<meta name="theme-color" content="#171e38">
+<title>星空のねこ | ヘラクレス</title>
+<style>
+:root{color-scheme:dark;font-family:system-ui,sans-serif;background:#131a30;color:#f9f3e9}
+*{box-sizing:border-box}body{margin:0;padding:24px 16px;min-height:100svh;display:grid;place-items:center;background:radial-gradient(ellipse at 50% 110%,#343051,transparent 65%),#131a30}
+a{color:#e9d5fa;text-underline-offset:4px}.shell{width:min(100%,620px)}h1{font-size:clamp(1.65rem,6vw,2.5rem);margin:14px 0}.scene{height:310px;position:relative;overflow:hidden;border-radius:26px;background:radial-gradient(circle at 16% 19%,#fce6b8 0 2px,transparent 3px),radial-gradient(circle at 70% 15%,#f9dcc5 0 1px,transparent 2px),radial-gradient(circle at 37% 26%,#fff1d5 0 2px,transparent 3px),radial-gradient(circle at 82% 37%,#fce6b8 0 2px,transparent 3px),radial-gradient(circle at 24% 47%,#ffdac5 0 1px,transparent 2px),linear-gradient(#212b50,#3c3459);border:1px solid #555576}
+.moon{position:absolute;right:36px;top:25px;width:48px;height:48px;border-radius:50%;box-shadow:inset 11px -7px 0 #ffe3ad;transform:rotate(-18deg)}.cushion{position:absolute;left:50%;bottom:30px;width:215px;height:46px;transform:translateX(-50%);border-radius:50%;background:#8870a8;box-shadow:0 12px 0 #665382}
+.cat{position:absolute;left:50%;bottom:56px;width:176px;height:146px;transform:translateX(-50%);border:0;background:none;cursor:pointer;touch-action:manipulation;color:#453248;padding:0}.cat:focus-visible,button:focus-visible,a:focus-visible{outline:3px solid #ffd998;outline-offset:4px}.fur{background:#eac7ad}.body{position:absolute;left:45px;bottom:2px;width:105px;height:78px;border-radius:60% 60% 40% 50%;box-shadow:inset -11px -8px #c99784}
+.tail{position:absolute;right:1px;bottom:11px;width:62px;height:48px;border:13px solid #eac7ad;border-left-color:transparent;border-bottom-color:#eac7ad;border-radius:50%;transform:rotate(-20deg);transform-origin:14px 32px;animation:tail 4s ease-in-out infinite}
+.face{position:absolute;left:27px;top:31px;width:96px;height:71px;border-radius:44% 46% 48% 48%;box-shadow:inset 0 -7px #d4a590}.ear{position:absolute;width:36px;height:44px;top:16px;left:30px;border-radius:85% 25% 30% 10%;rotate:-19deg}.ear.right{left:85px;scale:-1 1;rotate:19deg}.ear::after{content:"";position:absolute;inset:10px 9px 8px 9px;background:#c98585;border-radius:inherit}.eye{position:absolute;top:27px;left:24px;height:11px;width:8px;border-radius:50%;background:#473844}.eye.right{left:63px}.nose{position:absolute;top:40px;left:45px;width:10px;height:7px;background:#a65d68;border-radius:50% 50% 65% 65%}.cheeks{position:absolute;top:44px;left:12px;width:15px;height:6px;border-radius:50%;background:#ec9b95;box-shadow:57px 0 #ec9b95}.paws{position:absolute;left:29px;bottom:0;width:40px;height:20px;border-radius:100px;background:#f3d6bc;box-shadow:58px 0 #f3d6bc}.bubble{position:absolute;left:50%;top:29px;transform:translateX(-50%);color:#ffe2a8;font-size:1.45rem;font-weight:700}
+.cat[data-mood="happy"] .eye,.cat[data-mood="sleep"] .eye{height:7px;background:none;border-bottom:2px solid #473844;border-radius:0 0 10px 10px}
+.cat[data-mood="play"]{animation:jump .65s ease-in-out}.cat[data-mood="sleep"]{transform:translateX(-50%) scaleY(.77);transform-origin:center bottom}.cat[data-mood="sleep"] .tail{animation:none}.cat[data-mood="happy"] .tail{animation-duration:.5s}
+.actions{display:flex;gap:10px;flex-wrap:wrap;margin-top:14px}.actions button{flex:1 1 100px;min-height:46px;font:inherit;font-weight:700;border-radius:12px;border:1px solid #69688a;background:#2c3558;color:#fff4e2;cursor:pointer}.actions button:hover{background:#424770}.status{min-height:1.5em;color:#f2d5b2}
+@keyframes tail{50%{transform:rotate(-6deg)}}@keyframes jump{42%{transform:translate(-50%,-48px) rotate(-5deg)}}
+@media(prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important}}
+</style>
+</head>
+<body>
+<main class="shell">
+<a href="/HERCULES/photos/">← 写真に戻る</a>
+<h1>星空のねこ</h1>
+<div class="scene">
+  <span class="moon" aria-hidden="true"></span><span class="cushion" aria-hidden="true"></span>
+  <span class="bubble" id="bubble" aria-hidden="true">✦</span>
+  <button class="cat" id="cat" type="button" aria-label="ねこをなでる">
+    <span class="tail" aria-hidden="true"></span><span class="fur body" aria-hidden="true"></span>
+    <span class="fur ear" aria-hidden="true"></span><span class="fur ear right" aria-hidden="true"></span>
+    <span class="fur face" aria-hidden="true"><span class="eye"></span><span class="eye right"></span><span class="cheeks"></span><span class="nose"></span></span>
+    <span class="paws" aria-hidden="true"></span>
+  </button>
+</div>
+<div class="actions">
+  <button type="button" data-action="pet">なでる</button>
+  <button type="button" data-action="play">遊ぶ</button>
+  <button type="button" data-action="sleep" id="sleep">お昼寝</button>
+</div>
+<p class="status" id="status" role="status">ねこがこちらを見ています。</p>
+</main>
+<script>
+const cat=document.getElementById('cat');
+const bubble=document.getElementById('bubble');
+const status=document.getElementById('status');
+const sleep=document.getElementById('sleep');
+let resting=false;
+let playEnd;
+let petCount=0;
+const petMessages=['ごろごろ。','ねこが目を細めました。','ねこがもっとなでてほしそうです。'];
+function show(mood,symbol,message){
+  clearTimeout(playEnd);
+  cat.dataset.mood=mood;
+  bubble.textContent=symbol;
+  status.textContent=message;
+  sleep.textContent=resting?'起こす':'お昼寝';
+}
+function interact(action){
+  if(action==='sleep'){
+    resting=!resting;
+    if(resting)show('sleep','z z z','ねこが丸くなって眠りました。');
+    else show('','✦','ねこがのびをして起きました。');
+    return;
+  }
+  if(resting){status.textContent='すやすや。起こすまで眠っています。';return;}
+  if(action==='pet'){show('happy','♥',petMessages[petCount++%petMessages.length]);return;}
+  if(action==='play'){
+    if(cat.dataset.mood==='play')return;
+    show('play','✦','ねこが星のおもちゃに飛びつきました！');
+    playEnd=setTimeout(()=>show('happy','✦','もう一度、遊ぶ？'),650);
+  }
+}
+cat.addEventListener('click',()=>interact('pet'));
+document.querySelectorAll('[data-action]').forEach(button=>{
+  button.addEventListener('click',()=>interact(button.dataset.action));
+});
+</script>
+</body>
+</html>
