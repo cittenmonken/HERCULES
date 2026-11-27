@@ -1,10 +1,26 @@
+const adminSessionStorageKey = 'hercules-admin-token';
+const adminTokenPattern = /^\d{10}\.[a-f0-9-]{36}\.[a-f0-9]{64}$/;
 let adminToken = '';
+try{adminToken=sessionStorage.getItem(adminSessionStorageKey)||'';}catch{}
+function setAdminToken(token){
+  adminToken=token;
+  try{
+    if(token)sessionStorage.setItem(adminSessionStorageKey,token);
+    else sessionStorage.removeItem(adminSessionStorageKey);
+  }catch{}
+}
+function currentAdminToken(){
+  if(adminToken && (!adminTokenPattern.test(adminToken) ||
+    Number(adminToken.split('.')[0])*1000<=Date.now()))setAdminToken('');
+  return adminToken;
+}
 const sitesOrigin = 'https://tenmonken-infoweb-2026.rt-earth616.chatgpt.site';
 async function pagesFetch(input, options = {}) {
   const url = new URL(input,location.href);
   if (url.origin !== sitesOrigin || !url.pathname.startsWith('/api/')) return fetch(input,options);
   const headers = new Headers(options.headers);
-  if(adminToken)headers.set('Authorization','Bearer '+adminToken);
+  const token=currentAdminToken();
+  if(token)headers.set('Authorization','Bearer '+token);
   return fetch(input,{...options,headers,credentials:'omit',redirect:'error'});
 }
 function bindPagesLogin(form, onSuccess) {
@@ -25,10 +41,10 @@ function bindPagesLogin(form, onSuccess) {
       });
       const value=await response.json();
       if(!response.ok)throw Error(value.error||'認証できませんでした。');
-      if(!/^\d{10}\.[a-f0-9-]{36}\.[a-f0-9]{64}$/.test(value.token||''))throw Error('認証結果を確認できませんでした。');
-      adminToken=value.token;
+      if(!adminTokenPattern.test(value.token||''))throw Error('認証結果を確認できませんでした。');
+      setAdminToken(value.token);
       onSuccess();
-    }catch(error){adminToken='';status.textContent=error.message;field.focus();}
+    }catch(error){status.textContent=error.message;field.focus();}
     finally{button.disabled=false;}
   };
 }
@@ -481,7 +497,6 @@ function admin(page){
     <form id="login" class="ops-card"><h1 class="${page==='inventory'?'inventory-heading':''}">${title}</h1><div class="field"><label for="phrase">幹部用の合言葉</label><input id="phrase" type="password" required></div><button class="primary">開く</button><p id="err" role="status"></p></form>
     <div id="panel" class="ops-panel" hidden><div class="ops-toolbar"><h1 class="${page==='inventory'?'inventory-heading':''}">${title}</h1><button id="adminLogout" type="button" class="secondary">ログアウト</button></div>${page?panels[page]():`<nav class="ops-nav">${Object.entries(adminPages).map(([key,label])=>`<a class="ops-card" href="/HERCULES/admin/${key}"><h2>${label} →</h2></a>`).join('')}</nav>`}</div></main>`;
   const login=document.getElementById('login');
-  try{sessionStorage.removeItem('hercules-admin')}catch{}
   login.hidden=true;
   function open(){
     login.reset();
@@ -490,11 +505,41 @@ function admin(page){
     initAdmin(page);
   }
   document.getElementById('adminLogout').onclick=async()=>{
-    try{await api('admin/session','DELETE');location.reload()}
+    try{await api('admin/session','DELETE');setAdminToken('');location.reload()}
     catch(error){alert(error.message)}
   };
-  if(adminToken)api('admin/session').then(open).catch(()=>{adminToken='';bindPagesLogin(login,open)});
-  else bindPagesLogin(login,open);
+  const token=currentAdminToken();
+  if(!token){bindPagesLogin(login,open);return;}
+  const status=login.querySelector('#err');
+  const button=login.querySelector('button');
+  login.hidden=false;
+  status.textContent='認証確認中…';
+  button.disabled=true;
+  const checkSession=async()=>{
+    try{
+      const response=await pagesFetch(sitesOrigin+'/api/admin/session',{cache:'no-store'});
+      if(!login.isConnected)return;
+      if(response.ok){open();return;}
+      if(response.status===401){
+        setAdminToken('');
+        status.textContent='';
+        button.textContent='開く';
+        login.querySelector('input').required=true;
+        bindPagesLogin(login,open);
+        return;
+      }
+      throw Error('認証状態を確認できませんでした。');
+    }catch(error){
+      if(!login.isConnected)return;
+      status.textContent=error.message;
+      button.textContent='再試行';
+      login.querySelector('input').required=false;
+      login.onsubmit=event=>{event.preventDefault();button.disabled=true;void checkSession();};
+    }finally{
+      button.disabled=false;
+    }
+  };
+  void checkSession();
 }
 function initAdmin(page){
   if(page==='records')initRecordsAdmin();
