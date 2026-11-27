@@ -1215,8 +1215,10 @@ function featurePage(title){
 }
 function photoGallery(){
   return `<section class="feature-stack">
-    <form id="galleryUpload" class="ops-card">
-      <h2>写真を追加</h2>
+    <button id="galleryAdd" type="button" class="primary" style="justify-self:start">追加</button>
+    <dialog id="galleryUploadDialog" class="ops-card edit-dialog" aria-labelledby="galleryUploadTitle" style="width:min(92vw,560px);max-width:92vw;overflow-x:hidden">
+    <form id="galleryUpload">
+      <div class="ops-toolbar"><h2 id="galleryUploadTitle">写真を追加</h2><button id="galleryUploadClose" class="secondary" type="button">閉じる</button></div>
       <p class="hint">投稿した写真は、ギャラリーのURLを知っている人が閲覧できます。</p>
       <div class="field"><label for="galleryFiles">写真（1回10枚まで）</label><input id="galleryFiles" style="width:100%;min-width:0" type="file" accept="image/*" multiple required></div>
       <div class="field"><label for="galleryTags">選んだ写真に付けるタグ</label><input id="galleryTags" placeholder="例　観測会、茜浜" aria-describedby="galleryTagHelp"><small id="galleryTagHelp">複数のタグは読点またはカンマで区切ります。</small><div id="galleryTagChoices" class="feature-links" aria-label="既存のタグ"></div></div>
@@ -1224,10 +1226,13 @@ function photoGallery(){
       <p id="galleryUploadStatus" role="status"></p>
       <div id="galleryUploadProgress" hidden><progress aria-label="写真の投稿"></progress> <output id="galleryUploadElapsed" aria-live="off"></output></div>
     </form>
+    </dialog>
+    <p id="galleryNotice" role="status" hidden></p>
     <form id="galleryFilter" class="feature-links" role="search">
       <label for="gallerySearch">タグ</label><input id="gallerySearch" type="search" maxlength="40" placeholder="タグで絞り込む">
       <button class="secondary" type="submit">検索</button><button class="secondary" type="reset">解除</button>
     </form>
+    <div id="gallerySearchTags" class="feature-links" aria-label="検索に使える既存タグ"></div>
     <p id="galleryStatus" role="status"></p>
     <div id="galleryList" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,140px),1fr));gap:12px"></div>
     <button class="secondary" id="galleryMore" type="button" hidden>もっと見る</button>
@@ -1247,7 +1252,9 @@ function initPhotoGallery(manage=false){
   const byId=id=>document.getElementById(id);
   const list=byId('galleryList'), status=byId('galleryStatus'), more=byId('galleryMore');
   const filter=byId('galleryFilter'), search=byId('gallerySearch');
-  let next=null, revision=0, tag='';
+  const searchTags=byId('gallerySearchTags');
+  const firstPages=new Map();
+  let next=null, revision=0, tag='', previousTags='';
   async function load(append=false){
     const request=++revision;
     const params=new URLSearchParams();
@@ -1256,21 +1263,32 @@ function initPhotoGallery(manage=false){
     more.disabled=true;
     status.textContent='写真を読み込み中…';
     try {
-      const page=await api('photos?'+params);
+      const key=tag;
+      const cached=append?null:firstPages.get(key);
+      const page=cached&&Date.now()-cached.at<15000?cached.page:await api('photos?'+params);
+      if(request===revision&&!append&&page!==cached?.page){
+        if(firstPages.size>=12)firstPages.delete(firstPages.keys().next().value);
+        firstPages.set(key,{page,at:Date.now()});
+      }
       if(request!==revision||!list.isConnected)return;
       next=page.next;
-      if(Array.isArray(page.tags)){
-        choices.innerHTML=page.tags.map(label=>`<button class="secondary" type="button" data-gallery-choice="${esc(label)}">${esc(label)}</button>`).join('');
+      if(Array.isArray(page.tags)&&JSON.stringify(page.tags)!==previousTags){
+        previousTags=JSON.stringify(page.tags);
+        const tagButtons=attribute=>page.tags.map(label=>`<button class="secondary" type="button" ${attribute}="${esc(label)}">${esc(label)}</button>`).join('');
+        choices.innerHTML=tagButtons('data-gallery-choice');
+        searchTags.innerHTML=tagButtons('data-gallery-filter');
       }
-      if(!append)list.replaceChildren();
-      list.insertAdjacentHTML('beforeend',page.photos.map(photo=>{
+      for(const chip of searchTags.children)chip.setAttribute('aria-pressed',String(chip.dataset.galleryFilter===tag));
+      const cards=page.photos.map((photo,index)=>{
         const url=sitesOrigin+'/api/photos/'+encodeURIComponent(photo.id);
         const tags=photo.tags.map(label=>`<button class="secondary" type="button" data-gallery-tag="${esc(label)}">${esc(label)}</button>`).join('');
-        return `<article class="ops-card" style="padding:8px;min-width:0">
-          <button class="secondary" type="button" data-gallery-view aria-label="写真を拡大" style="display:block;width:100%;padding:0;border:0"><img src="${url}" alt="${esc(photo.tags.join('、')||'部活動の写真')}" loading="lazy" decoding="async" style="display:block;width:100%;aspect-ratio:4/3;object-fit:cover;border-radius:9px"></button>
+        return `<article class="ops-card" style="padding:8px;min-width:0;content-visibility:auto;contain-intrinsic-size:auto 180px">
+          <button class="secondary" type="button" data-gallery-view aria-label="写真を拡大" style="display:block;width:100%;padding:0;border:0"><img src="${url}" alt="${esc(photo.tags.join('、')||'部活動の写真')}" loading="${!append&&index<2?'eager':'lazy'}" decoding="async" style="display:block;width:100%;aspect-ratio:4/3;object-fit:cover;border-radius:9px"></button>
           <div class="feature-links" style="margin-top:6px;overflow-wrap:anywhere">${tags}${manage?`<button class="secondary" type="button" data-gallery-delete="${esc(photo.id)}">削除</button>`:''}</div>
         </article>`;
-      }).join(''));
+      }).join('');
+      if(append)list.insertAdjacentHTML('beforeend',cards);
+      else list.innerHTML=cards;
       status.textContent=list.children.length?'':'該当する写真がありません。';
       more.hidden=!next;
     }catch(error){
@@ -1282,6 +1300,10 @@ function initPhotoGallery(manage=false){
   const applyTag=value=>{search.value=value;tag=value.trim();more.hidden=true;void load();};
   filter.onsubmit=event=>{event.preventDefault();applyTag(search.value);};
   filter.onreset=event=>{event.preventDefault();applyTag('');};
+  searchTags.onclick=event=>{
+    const chip=event.target.closest('[data-gallery-filter]');
+    if(chip)applyTag(chip.dataset.galleryFilter);
+  };
   more.onclick=()=>void load(true);
   const viewer=byId('galleryViewer'), enlarged=byId('galleryViewerImage');
   viewer.addEventListener('close',()=>enlarged.removeAttribute('src'));
@@ -1299,7 +1321,7 @@ function initPhotoGallery(manage=false){
     const remove=event.target.closest('[data-gallery-delete]');
     if(!manage||!remove||!confirm('この写真をギャラリーから削除しますか？'))return;
     remove.disabled=true;
-    try{await api('photos/'+encodeURIComponent(remove.dataset.galleryDelete),'DELETE');await load();}
+    try{await api('photos/'+encodeURIComponent(remove.dataset.galleryDelete),'DELETE');firstPages.clear();await load();}
     catch(error){status.textContent=error.message;}
     finally{remove.disabled=false;}
   };
@@ -1316,6 +1338,13 @@ function initPhotoGallery(manage=false){
     labels.value=[...tags,tag].join('、');
     result.textContent='';
   };
+  const uploadDialog=byId('galleryUploadDialog'), notice=byId('galleryNotice');
+  const closeUpload=byId('galleryUploadClose');
+  byId('galleryAdd').onclick=()=>uploadDialog.showModal();
+  closeUpload.onclick=()=>uploadDialog.close();
+  uploadDialog.addEventListener('cancel',event=>{
+    if(button.disabled)event.preventDefault();
+  });
   let selection=[];
   input.onchange=()=>{selection=Array.from(input.files,file=>({file,id:crypto.randomUUID()}));};
   form.onsubmit=async event=>{
@@ -1323,7 +1352,8 @@ function initPhotoGallery(manage=false){
     const tags=selectedTags();
     if(!selection.length||selection.length>10){result.textContent='写真を1〜10枚選んでください。';return;}
     if(tags.length>12||tags.some(value=>value.length>40)){result.textContent='タグは12個まで、1個40文字以内で入力してください。';return;}
-    button.disabled=input.disabled=labels.disabled=true;
+    button.disabled=input.disabled=labels.disabled=closeUpload.disabled=true;
+    notice.hidden=true;
     const progress=byId('galleryUploadProgress'), output=byId('galleryUploadElapsed');
     const started=performance.now();
     const seconds=()=>((performance.now()-started)/1000).toFixed(1);
@@ -1348,13 +1378,17 @@ function initPhotoGallery(manage=false){
       await api('photos','POST',{photos,tags});
       form.reset();
       selection=[];
-      result.textContent=`${photos.length}枚の登録が完了しました（${seconds()} 秒）。`;
+      result.textContent='';
+      notice.textContent=`${photos.length}枚の登録が完了しました（${seconds()} 秒）。`;
+      notice.hidden=false;
+      uploadDialog.close();
+      firstPages.clear();
       applyTag('');
     }catch(error){result.textContent=error.message+'（経過 '+seconds()+' 秒）';}
     finally{
       clearInterval(timer);
       progress.hidden=true;
-      button.disabled=input.disabled=labels.disabled=false;
+      button.disabled=input.disabled=labels.disabled=closeUpload.disabled=false;
     }
   };
   void load();
