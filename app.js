@@ -19,7 +19,7 @@ async function pagesFetch(input, options = {}) {
   const url = new URL(input,location.href);
   if (url.origin !== sitesOrigin || !url.pathname.startsWith('/api/')) return fetch(input,options);
   const headers = new Headers(options.headers);
-  const token=currentAdminToken();
+  const token=/^\/admin(?:\/|$)/.test(pagePath())?currentAdminToken():'';
   if(token)headers.set('Authorization','Bearer '+token);
   return fetch(input,{...options,headers,credentials:'omit',redirect:'error'});
 }
@@ -75,6 +75,7 @@ window.addEventListener('popstate',()=>{
 const pagePath=()=>location.pathname.replace(/^\/HERCULES(?=\/|$)/,'')||'/';
 
 const paths={
+ photos:'M3 5h18v14H3z M6 16l4-5 3 3 2-2 3 4 M15 8h.01',
   link:'M10 13a4 4 0 0 0 6 0l4-4a4 4 0 0 0-6-6l-2 2m2 6a4 4 0 0 0-6 0l-4 4a4 4 0 0 0 6 6l2-2',
  menu:'M4 6h16M4 12h16M4 18h16',home:'m3 10 9-7 9 7v10H3zM9 20v-7h6v7',
  admin:'M4 6h16M4 12h16M4 18h16M8 4v4m8 2v4m-6 2v4',chat:'M4 4h16v12H9l-5 4z',
@@ -367,7 +368,7 @@ function renderPlanetCalendar(){
   });
   showMonth(current);
 }
-const siteLinks=[['/','home','ホーム'],['/chat','chat','チャット','chat'],['/calendar','calendar','部活行事カレンダー','calendar'],['/planet-calendar','moon','惑星カレンダー'],['/members','members','部員統計','members'],['/procedures','procedures','手続き・書類','procedures'],['/space-quiz','star','天文宇宙検定クイズ','quiz'],['/records','calendar','実績・記録','records'],['/inventory','procedures','物品管理','inventory'],['/external-services','link','外部サービス'],['/guide','about','利用ガイド'],['/ikenbako','feedback','意見箱','feedback'],['/admin','admin','運営']];
+const siteLinks=[['/','home','ホーム'],['/chat','chat','チャット','chat'],['/calendar','calendar','部活行事カレンダー','calendar'],['/planet-calendar','moon','惑星カレンダー'],['/members','members','部員統計','members'],['/procedures','procedures','手続き・書類','procedures'],['/space-quiz','star','天文宇宙検定クイズ','quiz'],['/records','calendar','実績・記録','records'],['/inventory','procedures','物品管理','inventory'],['/photos','photos','写真','photos'],['/external-services','link','外部サービス'],['/guide','about','利用ガイド'],['/ikenbako','feedback','意見箱','feedback'],['/admin','admin','運営']];
 const adminPages=Object.fromEntries([
   ...siteLinks.filter(link=>link[3]).map(([, , label,key])=>[key,label]),
   ['meeting','観測会'],['events','イベント'],['about','サイトの説明']
@@ -469,6 +470,7 @@ function admin(page){
   const panels={
     records:recordsAdminPanel,
     inventory:()=>inventoryPanel(true),
+    photos:()=>photoGallery(true),
     calendar:()=>`<section class="ops-card"><h2>掲載ファイル</h2><div id="calendarCurrent"></div>
       <form id="calendarUpload"><div class="field"><label for="calendarFile">カレンダーファイル</label><input id="calendarFile" type="file" accept="application/pdf,image/png,image/jpeg" required></div>
       <p class="hint">PDF　PNG　JPEG、最大5 MB。登録したファイルはサイトの閲覧者が見られます。</p>
@@ -571,6 +573,7 @@ function initAdmin(page){
   if(page==='records')initRecordsAdmin();
   if(page==='calendar')initCalendarAdmin();
   if(page==='inventory')initInventory(true);
+  if(page==='photos')initPhotoGallery(true);
   if(page==='chat'){
     document.getElementById('pauseChat').onchange=toggleChatPause;
     document.getElementById('refreshChat').onclick=loadChatAdmin;
@@ -872,7 +875,7 @@ const menuSections=[
   {path:'/'},
   {label:'活動・予定',icon:'calendar',paths:['/calendar','/planet-calendar']},
   {label:'部内交流',icon:'chat',paths:['/chat','/ikenbako']},
-  {label:'部の情報・手続き',icon:'procedures',paths:['/records','/members','/inventory','/procedures']},
+  {label:'部の情報・手続き',icon:'procedures',paths:['/records','/members','/inventory','/photos','/procedures']},
   {label:'学習・クイズ・資料',icon:'star',paths:['/space-quiz','/external-services']},
   {path:'/guide'},
   {path:'/admin'}
@@ -1206,6 +1209,114 @@ function featurePage(title){
   document.title=title+' | ヘラクレス';
   document.getElementById('app').innerHTML=`<div class="shell">${siteHeader()}<section class="chat-wrap"><div class="feedback" id="featureContent" aria-live="polite">読み込み中…</div></section></div>`;
   return document.getElementById('featureContent');
+}
+function photoGallery(manage=false){
+  return `<section class="feature-stack">
+    ${manage?`<form id="galleryUpload" class="ops-card">
+      <h2>写真を追加</h2>
+      <p class="hint">投稿した写真は、ギャラリーのURLを知っている人が閲覧できます。</p>
+      <div class="field"><label for="galleryFiles">写真（1回6枚まで）</label><input id="galleryFiles" type="file" accept="image/*" multiple required></div>
+      <div class="field"><label for="galleryTags">選んだ写真に付けるタグ</label><input id="galleryTags" placeholder="例　観測会、茜浜" aria-describedby="galleryTagHelp"><small id="galleryTagHelp">複数のタグは読点またはカンマで区切ります。</small></div>
+      <button type="submit" class="primary">投稿</button>
+      <p id="galleryUploadStatus" role="status"></p>
+    </form>`:`<a class="secondary" style="justify-self:start" href="/HERCULES/admin/photos/">運営　写真を追加</a>`}
+    <form id="galleryFilter" class="feature-links" role="search">
+      <label for="gallerySearch">タグ</label><input id="gallerySearch" type="search" maxlength="40" placeholder="タグで絞り込む">
+      <button class="secondary" type="submit">検索</button><button class="secondary" type="reset">解除</button>
+    </form>
+    <p id="galleryStatus" role="status"></p>
+    <div id="galleryList" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,140px),1fr));gap:12px"></div>
+    <button class="secondary" id="galleryMore" type="button" hidden>もっと見る</button>
+  </section>`;
+}
+function renderPhotos(){
+  const content=featurePage('写真');
+  content.removeAttribute('aria-live');
+  content.innerHTML='<h1>写真</h1>'+photoGallery();
+  initPhotoGallery();
+}
+function initPhotoGallery(manage=false){
+  const byId=id=>document.getElementById(id);
+  const list=byId('galleryList'), status=byId('galleryStatus'), more=byId('galleryMore');
+  const filter=byId('galleryFilter'), search=byId('gallerySearch');
+  let next=null, revision=0, tag='';
+  async function load(append=false){
+    const request=++revision;
+    const params=new URLSearchParams();
+    if(tag)params.set('tag',tag);
+    if(append&&next)params.set('before',next);
+    more.disabled=true;
+    status.textContent='写真を読み込み中…';
+    try {
+      const page=await api('photos?'+params);
+      if(request!==revision||!list.isConnected)return;
+      next=page.next;
+      if(!append)list.replaceChildren();
+      list.insertAdjacentHTML('beforeend',page.photos.map(photo=>{
+        const url=sitesOrigin+'/api/photos/'+encodeURIComponent(photo.id);
+        const tags=photo.tags.map(label=>`<button class="secondary" type="button" data-gallery-tag="${esc(label)}">${esc(label)}</button>`).join('');
+        return `<article class="ops-card" style="padding:8px;min-width:0">
+          <a href="${url}" target="_blank" rel="noopener noreferrer"><img src="${url}" alt="${esc(photo.tags.join('、')||'部活動の写真')}" loading="lazy" decoding="async" style="display:block;width:100%;aspect-ratio:4/3;object-fit:cover;border-radius:9px"></a>
+          <div class="feature-links" style="margin-top:6px;overflow-wrap:anywhere">${tags}${manage?`<button class="secondary" type="button" data-gallery-delete="${esc(photo.id)}">削除</button>`:''}</div>
+        </article>`;
+      }).join(''));
+      status.textContent=list.children.length?'':'該当する写真がありません。';
+      more.hidden=!next;
+    }catch(error){
+      if(request===revision)status.textContent=error.message;
+    }finally{
+      if(request===revision)more.disabled=false;
+    }
+  }
+  const applyTag=value=>{search.value=value;tag=value.trim();more.hidden=true;void load();};
+  filter.onsubmit=event=>{event.preventDefault();applyTag(search.value);};
+  filter.onreset=event=>{event.preventDefault();applyTag('');};
+  more.onclick=()=>void load(true);
+  list.onclick=async event=>{
+    const chip=event.target.closest('[data-gallery-tag]');
+    if(chip){applyTag(chip.dataset.galleryTag);return;}
+    const remove=event.target.closest('[data-gallery-delete]');
+    if(!manage||!remove||!confirm('この写真をギャラリーから削除しますか？'))return;
+    remove.disabled=true;
+    try{await api('photos/'+encodeURIComponent(remove.dataset.galleryDelete),'DELETE');await load();}
+    catch(error){status.textContent=error.message;}
+    finally{remove.disabled=false;}
+  };
+  if(manage){
+    const form=byId('galleryUpload'), input=byId('galleryFiles'), labels=byId('galleryTags'), result=byId('galleryUploadStatus');
+    const button=form.querySelector('button[type="submit"]');
+    let selection=[];
+    input.onchange=()=>{selection=Array.from(input.files,file=>({file,id:crypto.randomUUID()}));};
+    form.onsubmit=async event=>{
+      event.preventDefault();
+      const tags=[...new Set(labels.value.split(/[,、，]/).map(value=>value.trim()).filter(Boolean))];
+      if(!selection.length||selection.length>6){result.textContent='写真を1〜6枚選んでください。';return;}
+      if(tags.length>12||tags.some(value=>value.length>40)){result.textContent='タグは12個まで、1個40文字以内で入力してください。';return;}
+      button.disabled=input.disabled=labels.disabled=true;
+      try{
+        const photos=[];
+        for(const {file,id} of selection){
+          result.textContent=`写真を準備中（${photos.length+1}／${selection.length}）…`;
+          const blob=await prepareInventoryPhoto(file);
+          const image=await new Promise((resolve,reject)=>{
+            const reader=new FileReader();
+            reader.onload=()=>resolve(String(reader.result).split(',')[1]);
+            reader.onerror=()=>reject(Error('写真を読み込めませんでした。'));
+            reader.readAsDataURL(blob);
+          });
+          photos.push({id,image});
+        }
+        result.textContent='写真を保存中…';
+        await api('photos','POST',{photos,tags});
+        form.reset();
+        selection=[];
+        result.textContent=`${photos.length}枚を投稿しました。`;
+        applyTag('');
+      }catch(error){result.textContent=error.message;}
+      finally{button.disabled=input.disabled=labels.disabled=false;}
+    };
+  }
+  void load();
 }
 function calendarLink(label){
   return `<a class="secondary calendar-open" href="https://tenmonken-infoweb-2026.rt-earth616.chatgpt.site/api/calendar/file" target="_blank" rel="noopener noreferrer">${label} ↗</a>`;
@@ -2442,7 +2553,7 @@ document.addEventListener('change',event=>{
   const input=event.target.closest('input[data-pin-event]');
   if(input)pinCountdown(Number(input.dataset.pinEvent),input.checked);
 });
-(async()=>{if(document.documentElement.hasAttribute('data-meeting-offline')){renderOfflineMeeting();return;}const path=pagePath().replace(/\/$/,'');const section=path.slice(7);if(path==='/admin'||(path.startsWith('/admin/')&&Object.hasOwn(adminPages,section)))admin(path==='/admin'?'':section);else if(path==='/chat')renderChat();else if(path==='/ikenbako')renderFeedback();else if(path==='/calendar')renderCalendar();else if(path==='/planet-calendar')renderPlanetCalendar();else if(path==='/members')renderMembers();else if(path==='/procedures')renderProcedures();else if(path==='/space-quiz')renderQuiz();else if(path==='/guide'||path==='/guide/home-screen'||(path.startsWith('/guide/home-screen/')&&(Object.hasOwn(guideDevices,path.slice('/guide/home-screen/'.length))||Object.hasOwn(homeScreenGuides,path.slice('/guide/home-screen/'.length)))))renderGuide(path);else if(path==='/inventory')renderInventory();else if(path==='/records')renderRecords();else if(path==='/external-services')renderExternalServices();else{
+(async()=>{if(document.documentElement.hasAttribute('data-meeting-offline')){renderOfflineMeeting();return;}const path=pagePath().replace(/\/$/,'');const section=path.slice(7);if(path==='/admin'||(path.startsWith('/admin/')&&Object.hasOwn(adminPages,section)))admin(path==='/admin'?'':section);else if(path==='/chat')renderChat();else if(path==='/ikenbako')renderFeedback();else if(path==='/calendar')renderCalendar();else if(path==='/planet-calendar')renderPlanetCalendar();else if(path==='/members')renderMembers();else if(path==='/procedures')renderProcedures();else if(path==='/space-quiz')renderQuiz();else if(path==='/guide'||path==='/guide/home-screen'||(path.startsWith('/guide/home-screen/')&&(Object.hasOwn(guideDevices,path.slice('/guide/home-screen/'.length))||Object.hasOwn(homeScreenGuides,path.slice('/guide/home-screen/'.length)))))renderGuide(path);else if(path==='/inventory')renderInventory();else if(path==='/photos')renderPhotos();else if(path==='/records')renderRecords();else if(path==='/external-services')renderExternalServices();else{
   const started=Date.now();
   render();
   void loadNews();
