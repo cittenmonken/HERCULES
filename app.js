@@ -1409,7 +1409,15 @@ function initPhotoGallery(manage=false){
     }
   }
   const applyTag=value=>{search.value=value;tag=value.trim();more.hidden=true;void load();};
-  filter.onsubmit=event=>{event.preventDefault();applyTag(search.value);};
+  filter.onsubmit=event=>{
+    event.preventDefault();
+    const query=search.value.trim();
+    if(query==='ねこ'||query==='ネコ'){
+      location.assign('/HERCULES/photos/cat/');
+      return;
+    }
+    applyTag(query);
+  };
   filter.onreset=event=>{event.preventDefault();applyTag('');};
   searchTags.onclick=event=>{
     const chip=event.target.closest('[data-gallery-filter]');
