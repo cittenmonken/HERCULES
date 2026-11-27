@@ -28,16 +28,44 @@ a{color:#e9d5fa;text-underline-offset:4px}.shell{width:min(100%,620px)}h1{font-s
 .naming{margin-top:16px;border:1px solid #69688a;border-radius:13px;padding:12px;background:#252d4b}
 .naming summary{cursor:pointer;font-weight:700}.naming label{display:block;margin:12px 0 6px;font-size:.9rem}.naming form>div{display:flex;gap:8px}
 .naming input,.naming button{min-height:42px;border:1px solid #69688a;border-radius:9px;background:#343d62;color:#fff4e2;font:inherit;padding:7px 10px}.naming input{min-width:0;flex:1}.naming button{cursor:pointer}
+.food-choices{margin:14px 0 0;border:1px solid #69688a;border-radius:13px;padding:10px;min-width:0}
+.food-choices button{font:inherit;color:#fff4e2;background:#343d62;border:1px solid #69688a;border-radius:9px;padding:9px 12px;min-height:44px;margin:3px;cursor:pointer}
+.actions button:disabled,.food-choices button:disabled{opacity:.55;cursor:default}
+.feeding,.care-prop{display:none;position:absolute;pointer-events:none;z-index:2}
+.scene[data-action="serve"] .feeding,.scene[data-action="approach"] .feeding,.scene[data-action="eat"] .feeding{display:block}
+.feeding{left:calc(50% - 125px);bottom:38px;width:90px;height:112px;--food:#b15d36}
+.scene[data-food="wet"] .feeding{--food:#df936a}.scene[data-food="treat"] .feeding{--food:#e9bc75}
+.bowl{position:absolute;bottom:0;left:9px;width:66px;height:26px;background:#8dc2c2;border:3px solid #bedede;border-radius:6px 6px 22px 22px;box-shadow:0 4px 0 #5f8f99}
+.food-portion{position:absolute;left:10px;right:10px;top:-7px;height:12px;border-radius:60%;background:var(--food);transform-origin:center bottom}
+.scene[data-action="serve"] .food-portion{animation:fill .75s both}.scene[data-action="eat"] .food-portion{animation:empty 1.45s both}
+.food-scoop,.food-drop{display:none;position:absolute}.scene[data-action="serve"] .food-scoop,.scene[data-action="serve"] .food-drop{display:block}
+.food-scoop{top:16px;left:13px;width:43px;height:18px;border-radius:7px 9px 20px 20px;background:#ffe0ac;animation:scoop .75s both}.food-scoop::after{content:"";position:absolute;left:-21px;top:4px;width:27px;height:7px;border-radius:6px;background:inherit}
+.food-drop{left:41px;top:32px;width:8px;height:7px;border-radius:50%;background:var(--food);box-shadow:10px -7px var(--food),-8px -12px var(--food);animation:pour .75s both}
+.scene[data-action="approach"] .cat,.scene[data-action="eat"] .cat{transform:translateX(calc(-50% - 30px))}
+.cat{transition:transform .35s ease}.scene[data-action="eat"] .face{animation:dip .45s ease-in-out infinite alternate}
+.scene[data-action="pet"] .care-prop,.scene[data-action="brush"] .care-prop,.scene[data-action="play"] .care-prop,.scene[data-action="wake"] .care-prop{display:block}
+.care-prop{left:calc(50% - 47px);bottom:169px;font-size:29px;transform-origin:bottom right}
+.scene[data-action="pet"] .care-prop,.scene[data-action="brush"] .care-prop{animation:stroke .52s ease-in-out infinite alternate}
+.scene[data-action="play"] .care-prop{left:calc(50% + 59px);bottom:174px;animation:toy .65s ease-in-out both}.scene[data-action="wake"] .care-prop{animation:toy .6s ease-out both}
+@keyframes fill{0%,55%{transform:scale(.05)}100%{transform:scale(1)}}@keyframes empty{to{transform:scale(.05)}}
+@keyframes scoop{0%{transform:translate(-24px,-16px);opacity:0}30%{opacity:1}60%{transform:rotate(27deg)}100%{transform:translate(-18px,-18px);opacity:0}}
+@keyframes pour{0%,20%{opacity:0;transform:translateY(0)}35%{opacity:1}85%,100%{transform:translateY(57px);opacity:0}}
+@keyframes dip{to{transform:translate(-11px,13px) rotate(-12deg)}}@keyframes stroke{to{transform:translate(27px,9px) rotate(14deg)}}@keyframes toy{45%{transform:translate(-17px,-37px) rotate(32deg)}}
 @keyframes chew{to{transform:scaleY(.36)}}@keyframes lean{50%{transform:rotate(-9deg) translateY(-3px)}}
 @keyframes tail{50%{transform:rotate(-6deg)}}@keyframes jump{42%{transform:translate(-50%,-48px) rotate(-5deg)}}
-@media(prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important}}
+@media(prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important;transition:none!important}}
 </style>
 </head>
 <body>
 <main class="shell">
 <a href="/HERCULES/photos/">← 写真に戻る</a>
 <h1 id="catName">星空のねこ</h1>
-<div class="scene">
+<div class="scene" id="catScene">
+  <div class="feeding" aria-hidden="true">
+    <span class="food-scoop"></span><span class="food-drop"></span>
+    <span class="bowl"><span class="food-portion"></span></span>
+  </div>
+  <span class="care-prop" id="careProp" aria-hidden="true"></span>
   <span class="moon" aria-hidden="true"></span><span class="cushion" aria-hidden="true"></span>
   <span class="bubble" id="bubble" aria-hidden="true">✦</span>
   <button class="cat" id="cat" type="button" aria-label="ねこをなでる">
@@ -49,11 +77,17 @@ a{color:#e9d5fa;text-underline-offset:4px}.shell{width:min(100%,620px)}h1{font-s
 </div>
 <div class="actions">
   <button type="button" data-action="pet">なでる</button>
-  <button type="button" data-action="feed">ごはん</button>
+  <button type="button" data-action="feed" aria-controls="foodChoices" aria-expanded="false" id="feedButton">ごはん</button>
   <button type="button" data-action="brush">ブラッシング</button>
   <button type="button" data-action="play">遊ぶ</button>
   <button type="button" data-action="sleep" id="sleep">お昼寝</button>
 </div>
+<fieldset class="food-choices" id="foodChoices" hidden>
+  <legend>どのごはんにする？</legend>
+  <button type="button" data-food="dry">カリカリ</button>
+  <button type="button" data-food="wet">お魚のウェットフード</button>
+  <button type="button" data-food="treat">猫用おやつ</button>
+</fieldset>
 <p class="status" id="catStatus" role="status">ねこがこちらを見ています。</p>
 <p class="fullness" id="fullness"></p>
 <details class="naming"><summary>名前をつける・変える</summary>
@@ -65,6 +99,13 @@ a{color:#e9d5fa;text-underline-offset:4px}.shell{width:min(100%,620px)}h1{font-s
 </main>
 <script>
 const cat=document.getElementById('cat');
+const scene=document.getElementById('catScene');
+const prop=document.getElementById('careProp');
+const foodChoices=document.getElementById('foodChoices');
+const feedButton=document.getElementById('feedButton');
+const controls=[...document.querySelectorAll('[data-action]')];
+const reducedMotion=window.matchMedia('(prefers-reduced-motion: reduce)');
+const foodNames={dry:'カリカリ',wet:'お魚のウェットフード',treat:'猫用おやつ'};
 const bubble=document.getElementById('bubble');
 const statusText=document.getElementById('catStatus');
 const sleep=document.getElementById('sleep');
@@ -73,7 +114,7 @@ const fullnessText=document.getElementById('fullness');
 const nameInput=document.getElementById('nameInput');
 const nameForm=document.getElementById('nameForm');
 const saveKey='hercules-stargazing-cat';
-let name='', fullness=1, resting=false, activityTimer, petCount=0;
+let name='', fullness=1, resting=false, feeding=false, activityTimer, petCount=0;
 try{
   const saved=JSON.parse(localStorage.getItem(saveKey)||'null');
   if(typeof saved?.name==='string')name=saved.name.trim().slice(0,20);
@@ -88,38 +129,71 @@ function refresh(){
   cat.setAttribute('aria-label',catName()+'をなでる');
   fullnessText.textContent='おなか　'+['ぺこぺこ','すいている','もう少し食べられそう','いっぱい'][fullness];
 }
-function show(mood,symbol,message){
+function show(mood,symbol,message,action=''){
+  scene.dataset.action=action;
   clearTimeout(activityTimer);
   cat.dataset.mood=mood;
   bubble.textContent=symbol;
   statusText.textContent=message;
   sleep.textContent=resting?'起こす':'お昼寝';
 }
+function toggleFood(open){
+  foodChoices.hidden=!open;
+  feedButton.setAttribute('aria-expanded',String(open));
+}
+function afterMotion(duration, callback){
+  activityTimer=setTimeout(callback,reducedMotion.matches?Math.min(duration,200):duration);
+}
+function feed(food){
+  if(feeding||resting||fullness===3||!Object.hasOwn(foodNames,food))return;
+  toggleFood(false);
+  feeding=true;
+  controls.forEach(button=>{button.disabled=true;});
+  scene.dataset.food=food;
+  const meal=foodNames[food];
+  show('','♪','器に'+meal+'を盛っています。','serve');
+  afterMotion(750,()=>{
+    show('','✦',catName()+'が器に近づきました。','approach');
+    afterMotion(400,()=>{
+      show('eat','♪',catName()+'が'+meal+'をもぐもぐ。','eat');
+      afterMotion(1450,()=>{
+        fullness++;
+        save();
+        refresh();
+        feeding=false;
+        controls.forEach(button=>{button.disabled=false;});
+        show('happy','♥','ごちそうさま！');
+        feedButton.focus();
+      });
+    });
+  });
+}
 function interact(action){
+  if(feeding)return;
+  if(action!=='feed')toggleFood(false);
   if(action==='sleep'){
     resting=!resting;
     if(resting)show('sleep','z z z',catName()+'が丸くなって眠りました。');
-    else show('','✦',catName()+'がのびをして起きました。');
+    else{prop.textContent='✧';show('','✦',catName()+'がのびをして起きました。','wake');}
     return;
   }
   if(resting){statusText.textContent='すやすや。起こすまで眠っています。';return;}
   if(action==='pet'){
     const messages=['ごろごろ。',catName()+'が目を細めました。',catName()+'が手にほっぺをすり寄せました。'];
-    show('happy','♥',messages[petCount++%messages.length]);
+    prop.textContent='🤚';
+    show('happy','♥',messages[petCount++%messages.length],'pet');
+    afterMotion(1000,()=>{scene.dataset.action='';});
     return;
   }
   if(action==='brush'){
-    show('brush','✧',catName()+'が気持ちよさそうに目を閉じました。');
+    prop.textContent='🪮';
+    show('brush','✧',catName()+'が気持ちよさそうに目を閉じました。','brush');
+    afterMotion(1050,()=>{scene.dataset.action='';});
     return;
   }
   if(action==='feed'){
-    if(cat.dataset.mood==='eat')return;
-    if(fullness===3){show('happy','♥','おなかいっぱい。あとで食べようね。');return;}
-    fullness++;
-    save();
-    refresh();
-    show('eat','♪',catName()+'がごはんをもぐもぐ。');
-    activityTimer=setTimeout(()=>show('happy','♥','ごちそうさま！'),1000);
+    if(fullness===3){toggleFood(false);show('happy','♥','おなかいっぱい。あとで食べようね。');return;}
+    toggleFood(foodChoices.hidden);
     return;
   }
   if(action==='play'){
@@ -127,8 +201,9 @@ function interact(action){
     fullness=Math.max(0,fullness-1);
     save();
     refresh();
-    show('play','✦',catName()+'が星のおもちゃに飛びつきました！');
-    activityTimer=setTimeout(()=>show('happy','✦','もう一度、遊ぶ？'),650);
+    prop.textContent='🌟';
+    show('play','✦',catName()+'が星のおもちゃに飛びつきました！','play');
+    afterMotion(650,()=>show('happy','✦','もう一度、遊ぶ？'));
   }
 }
 nameInput.value=name;
@@ -141,7 +216,11 @@ nameForm.addEventListener('submit',event=>{
   statusText.textContent=name?'名前を「'+name+'」にしました。':'名前を「ねこ」に戻しました。';
 });
 cat.addEventListener('click',()=>interact('pet'));
-document.querySelectorAll('[data-action]').forEach(button=>{
+foodChoices.addEventListener('click',event=>{
+  const choice=event.target.closest('[data-food]');
+  if(choice)feed(choice.dataset.food);
+});
+controls.forEach(button=>{
   button.addEventListener('click',()=>interact(button.dataset.action));
 });
 refresh();
