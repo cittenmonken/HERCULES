@@ -17,6 +17,18 @@ a{color:#e9d5fa;text-underline-offset:4px}.shell{width:min(100%,620px)}h1{font-s
 .cat[data-mood="happy"] .eye,.cat[data-mood="sleep"] .eye{height:7px;background:none;border-bottom:2px solid #473844;border-radius:0 0 10px 10px}
 .cat[data-mood="play"]{animation:jump .65s ease-in-out}.cat[data-mood="sleep"]{transform:translateX(-50%) scaleY(.77);transform-origin:center bottom}.cat[data-mood="sleep"] .tail{animation:none}.cat[data-mood="happy"] .tail{animation-duration:.5s}
 .actions{display:flex;gap:10px;flex-wrap:wrap;margin-top:14px}.actions button{flex:1 1 100px;min-height:46px;font:inherit;font-weight:700;border-radius:12px;border:1px solid #69688a;background:#2c3558;color:#fff4e2;cursor:pointer}.actions button:hover{background:#424770}.status{min-height:1.5em;color:#f2d5b2}
+.mouth{position:absolute;left:44px;top:50px;width:13px;height:6px;border-bottom:2px solid #745263;border-radius:0 0 13px 13px}
+.cat[data-mood="eat"] .mouth{left:47px;width:8px;height:8px;top:49px;border:0;border-radius:50%;background:#745263;animation:chew .3s ease-in-out infinite alternate}
+.cat[data-mood="play"] .eye{height:13px;width:10px;box-shadow:inset 2px 3px #fff0da}
+.cat[data-mood="happy"] .mouth,.cat[data-mood="brush"] .mouth{height:9px;border-width:3px}
+.cat[data-mood="brush"] .eye{height:6px;background:none;border-bottom:2px solid #473844;border-radius:0 0 10px 10px}
+.cat[data-mood="brush"] .face{animation:lean .5s ease-in-out}
+.cat[data-mood="sleep"] .mouth{height:5px;width:8px;margin-left:3px}
+.fullness{font-size:.9rem;color:#e5c9ef}
+.naming{margin-top:16px;border:1px solid #69688a;border-radius:13px;padding:12px;background:#252d4b}
+.naming summary{cursor:pointer;font-weight:700}.naming label{display:block;margin:12px 0 6px;font-size:.9rem}.naming form>div{display:flex;gap:8px}
+.naming input,.naming button{min-height:42px;border:1px solid #69688a;border-radius:9px;background:#343d62;color:#fff4e2;font:inherit;padding:7px 10px}.naming input{min-width:0;flex:1}.naming button{cursor:pointer}
+@keyframes chew{to{transform:scaleY(.36)}}@keyframes lean{50%{transform:rotate(-9deg) translateY(-3px)}}
 @keyframes tail{50%{transform:rotate(-6deg)}}@keyframes jump{42%{transform:translate(-50%,-48px) rotate(-5deg)}}
 @media(prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important}}
 </style>
@@ -24,59 +36,116 @@ a{color:#e9d5fa;text-underline-offset:4px}.shell{width:min(100%,620px)}h1{font-s
 <body>
 <main class="shell">
 <a href="/HERCULES/photos/">← 写真に戻る</a>
-<h1>星空のねこ</h1>
+<h1 id="catName">星空のねこ</h1>
 <div class="scene">
   <span class="moon" aria-hidden="true"></span><span class="cushion" aria-hidden="true"></span>
   <span class="bubble" id="bubble" aria-hidden="true">✦</span>
   <button class="cat" id="cat" type="button" aria-label="ねこをなでる">
     <span class="tail" aria-hidden="true"></span><span class="fur body" aria-hidden="true"></span>
     <span class="fur ear" aria-hidden="true"></span><span class="fur ear right" aria-hidden="true"></span>
-    <span class="fur face" aria-hidden="true"><span class="eye"></span><span class="eye right"></span><span class="cheeks"></span><span class="nose"></span></span>
+    <span class="fur face" aria-hidden="true"><span class="eye"></span><span class="eye right"></span><span class="cheeks"></span><span class="nose"></span><span class="mouth"></span></span>
     <span class="paws" aria-hidden="true"></span>
   </button>
 </div>
 <div class="actions">
   <button type="button" data-action="pet">なでる</button>
+  <button type="button" data-action="feed">ごはん</button>
+  <button type="button" data-action="brush">ブラッシング</button>
   <button type="button" data-action="play">遊ぶ</button>
   <button type="button" data-action="sleep" id="sleep">お昼寝</button>
 </div>
-<p class="status" id="status" role="status">ねこがこちらを見ています。</p>
+<p class="status" id="catStatus" role="status">ねこがこちらを見ています。</p>
+<p class="fullness" id="fullness"></p>
+<details class="naming"><summary>名前をつける・変える</summary>
+  <form id="nameForm">
+    <label for="nameInput">ねこの名前</label>
+    <div><input id="nameInput" maxlength="20" autocomplete="off" placeholder="20文字まで"><button type="submit">保存</button></div>
+  </form>
+</details>
 </main>
 <script>
 const cat=document.getElementById('cat');
 const bubble=document.getElementById('bubble');
-const status=document.getElementById('status');
+const statusText=document.getElementById('catStatus');
 const sleep=document.getElementById('sleep');
-let resting=false;
-let playEnd;
-let petCount=0;
-const petMessages=['ごろごろ。','ねこが目を細めました。','ねこがもっとなでてほしそうです。'];
+const heading=document.getElementById('catName');
+const fullnessText=document.getElementById('fullness');
+const nameInput=document.getElementById('nameInput');
+const nameForm=document.getElementById('nameForm');
+const saveKey='hercules-stargazing-cat';
+let name='', fullness=1, resting=false, activityTimer, petCount=0;
+try{
+  const saved=JSON.parse(localStorage.getItem(saveKey)||'null');
+  if(typeof saved?.name==='string')name=saved.name.trim().slice(0,20);
+  if(Number.isInteger(saved?.fullness)&&saved.fullness>=0&&saved.fullness<=3)fullness=saved.fullness;
+}catch{}
+const catName=()=>name||'ねこ';
+function save(){
+  try{localStorage.setItem(saveKey,JSON.stringify({name,fullness}));}catch{}
+}
+function refresh(){
+  heading.textContent=name||'星空のねこ';
+  cat.setAttribute('aria-label',catName()+'をなでる');
+  fullnessText.textContent='おなか　'+['ぺこぺこ','すいている','もう少し食べられそう','いっぱい'][fullness];
+}
 function show(mood,symbol,message){
-  clearTimeout(playEnd);
+  clearTimeout(activityTimer);
   cat.dataset.mood=mood;
   bubble.textContent=symbol;
-  status.textContent=message;
+  statusText.textContent=message;
   sleep.textContent=resting?'起こす':'お昼寝';
 }
 function interact(action){
   if(action==='sleep'){
     resting=!resting;
-    if(resting)show('sleep','z z z','ねこが丸くなって眠りました。');
-    else show('','✦','ねこがのびをして起きました。');
+    if(resting)show('sleep','z z z',catName()+'が丸くなって眠りました。');
+    else show('','✦',catName()+'がのびをして起きました。');
     return;
   }
-  if(resting){status.textContent='すやすや。起こすまで眠っています。';return;}
-  if(action==='pet'){show('happy','♥',petMessages[petCount++%petMessages.length]);return;}
+  if(resting){statusText.textContent='すやすや。起こすまで眠っています。';return;}
+  if(action==='pet'){
+    const messages=['ごろごろ。',catName()+'が目を細めました。',catName()+'が手にほっぺをすり寄せました。'];
+    show('happy','♥',messages[petCount++%messages.length]);
+    return;
+  }
+  if(action==='brush'){
+    show('brush','✧',catName()+'が気持ちよさそうに目を閉じました。');
+    return;
+  }
+  if(action==='feed'){
+    if(cat.dataset.mood==='eat')return;
+    if(fullness===3){show('happy','♥','おなかいっぱい。あとで食べようね。');return;}
+    fullness++;
+    save();
+    refresh();
+    show('eat','♪',catName()+'がごはんをもぐもぐ。');
+    activityTimer=setTimeout(()=>show('happy','♥','ごちそうさま！'),1000);
+    return;
+  }
   if(action==='play'){
     if(cat.dataset.mood==='play')return;
-    show('play','✦','ねこが星のおもちゃに飛びつきました！');
-    playEnd=setTimeout(()=>show('happy','✦','もう一度、遊ぶ？'),650);
+    fullness=Math.max(0,fullness-1);
+    save();
+    refresh();
+    show('play','✦',catName()+'が星のおもちゃに飛びつきました！');
+    activityTimer=setTimeout(()=>show('happy','✦','もう一度、遊ぶ？'),650);
   }
 }
+nameInput.value=name;
+nameForm.addEventListener('submit',event=>{
+  event.preventDefault();
+  name=nameInput.value.trim().slice(0,20);
+  nameInput.value=name;
+  save();
+  refresh();
+  statusText.textContent=name?'名前を「'+name+'」にしました。':'名前を「ねこ」に戻しました。';
+});
 cat.addEventListener('click',()=>interact('pet'));
 document.querySelectorAll('[data-action]').forEach(button=>{
   button.addEventListener('click',()=>interact(button.dataset.action));
 });
+refresh();
+statusText.textContent=catName()+'がこちらを見ています。';
 </script>
 </body>
 </html>
