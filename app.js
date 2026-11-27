@@ -1218,10 +1218,11 @@ function photoGallery(){
     <form id="galleryUpload" class="ops-card">
       <h2>写真を追加</h2>
       <p class="hint">投稿した写真は、ギャラリーのURLを知っている人が閲覧できます。</p>
-      <div class="field"><label for="galleryFiles">写真（1回6枚まで）</label><input id="galleryFiles" type="file" accept="image/*" multiple required></div>
+      <div class="field"><label for="galleryFiles">写真（1回6枚まで）</label><input id="galleryFiles" style="width:100%;min-width:0" type="file" accept="image/*" multiple required></div>
       <div class="field"><label for="galleryTags">選んだ写真に付けるタグ</label><input id="galleryTags" placeholder="例　観測会、茜浜" aria-describedby="galleryTagHelp"><small id="galleryTagHelp">複数のタグは読点またはカンマで区切ります。</small></div>
       <button type="submit" class="primary">投稿</button>
       <p id="galleryUploadStatus" role="status"></p>
+      <div id="galleryUploadProgress" hidden><progress aria-label="写真の投稿"></progress> <output id="galleryUploadElapsed" aria-live="off"></output></div>
     </form>
     <form id="galleryFilter" class="feature-links" role="search">
       <label for="gallerySearch">タグ</label><input id="gallerySearch" type="search" maxlength="40" placeholder="タグで絞り込む">
@@ -1295,6 +1296,13 @@ function initPhotoGallery(manage=false){
     if(!selection.length||selection.length>6){result.textContent='写真を1〜6枚選んでください。';return;}
     if(tags.length>12||tags.some(value=>value.length>40)){result.textContent='タグは12個まで、1個40文字以内で入力してください。';return;}
     button.disabled=input.disabled=labels.disabled=true;
+    const progress=byId('galleryUploadProgress'), output=byId('galleryUploadElapsed');
+    const started=performance.now();
+    const seconds=()=>((performance.now()-started)/1000).toFixed(1);
+    const update=()=>{output.textContent='経過 '+seconds()+' 秒';};
+    progress.hidden=false;
+    update();
+    const timer=setInterval(update,100);
     try{
       const photos=[];
       for(const {file,id} of selection){
@@ -1312,10 +1320,14 @@ function initPhotoGallery(manage=false){
       await api('photos','POST',{photos,tags});
       form.reset();
       selection=[];
-      result.textContent=`${photos.length}枚を投稿しました。`;
+      result.textContent=`${photos.length}枚の登録が完了しました（${seconds()} 秒）。`;
       applyTag('');
-    }catch(error){result.textContent=error.message;}
-    finally{button.disabled=input.disabled=labels.disabled=false;}
+    }catch(error){result.textContent=error.message+'（経過 '+seconds()+' 秒）';}
+    finally{
+      clearInterval(timer);
+      progress.hidden=true;
+      button.disabled=input.disabled=labels.disabled=false;
+    }
   };
   void load();
 }
