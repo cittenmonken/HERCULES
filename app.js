@@ -373,7 +373,7 @@ function renderPlanetCalendar(){
 const siteLinks=[['/','home','ホーム'],['/chat','chat','チャット','chat'],['/calendar','calendar','部活行事カレンダー','calendar'],['/planet-calendar','moon','惑星カレンダー'],['/members','members','部員統計','members'],['/procedures','procedures','手続き・書類','procedures'],['/space-quiz','star','天文宇宙検定クイズ','quiz'],['/records','calendar','実績・記録','records'],['/inventory','procedures','物品管理','inventory'],['/photos','photos','写真','photos'],['/external-services','link','外部リンク'],['/guide','about','利用ガイド'],['/ikenbako','feedback','意見箱','feedback'],['/admin','admin','運営']];
 const adminPages=Object.fromEntries([
   ...siteLinks.filter(link=>link[3]).map(([, , label,key])=>[key,label]),
-  ['meeting','観測会'],['events','イベント'],['about','サイトの説明']
+  ['meeting','観測会'],['announcement','運営からのお知らせ'],['events','イベント'],['about','サイトの説明']
 ]);
 function field(name,label,type='text',attrs=''){
   return `<div class="field"><label for="${name}">${label}</label><input id="${name}" name="${name}" type="${type}" ${attrs}></div>`;
@@ -480,8 +480,16 @@ function admin(page){
       <p id="calendarStatus" role="status"></p></form></section>`,
 
     meeting:()=>`<section class="ops-card"><h2>観測会の管理</h2><p class="hint">日付を空欄にすると毎週金曜日を自動表示します。</p><p><strong data-meeting-date>${meetingDisplay()}</strong></p>
-      <form id="meetingForm"><div class="field"><label for="meetingStatusInput">開催状況</label><select id="meetingStatusInput"><option value="pending">未定</option><option value="scheduled">開催予定</option><option value="cancelled">中止</option></select></div>${field('meetingDateInput','観測会の日付（任意）','date')}<div class="field"><label for="locationInput">場所</label><input id="locationInput" maxlength="200"></div><div class="field"><label for="meetingInput">特記事項</label><textarea id="meetingInput" maxlength="2000"></textarea></div><div class="field"><label for="announcementInput">運営のお知らせ</label><textarea id="announcementInput" maxlength="2000"></textarea></div><button class="primary" id="save" disabled>観測会の設定を保存</button><p id="meetingStatus" class="ops-status hint" role="status"></p></form></section>
+      <form id="meetingForm"><div class="field"><label for="meetingStatusInput">開催状況</label><select id="meetingStatusInput"><option value="pending">未定</option><option value="scheduled">開催予定</option><option value="cancelled">中止</option></select></div>${field('meetingDateInput','観測会の日付（任意）','date')}<div class="field"><label for="locationInput">場所</label><input id="locationInput" maxlength="200"></div><div class="field"><label for="meetingInput">特記事項</label><textarea id="meetingInput" maxlength="2000"></textarea></div><button class="primary" id="save" disabled>観測会の設定を保存</button><p id="meetingStatus" class="ops-status hint" role="status"></p></form></section>
       `,
+    announcement:()=>`<section class="ops-card">
+      <form id="announcementForm">
+        <div class="field"><label for="announcementInput">お知らせ本文</label><textarea id="announcementInput" maxlength="2000" disabled></textarea></div>
+        <p class="hint">空欄で保存すると、お知らせを取り下げます。</p>
+        <button class="primary" type="submit" disabled>お知らせを保存</button>
+        <p id="announcementStatus" role="status"></p>
+      </form>
+    </section>`,
     chat:()=>`<section class="ops-card"><h2>投稿受付</h2><p><label><input type="checkbox" id="pauseChat" disabled> チャット投稿を一時停止する</label></p><p id="chatState" role="status"></p></section>
       <section class="ops-card"><div class="ops-toolbar"><h2>最近の投稿</h2><button class="secondary" id="refreshChat">更新</button></div><div id="chatRows"></div><p id="chatAction" role="status"></p></section>`,
     feedback:()=>`<section class="ops-card"><h2>投稿一覧</h2><div id="feedbackRows"></div></section>`,
@@ -574,6 +582,26 @@ function admin(page){
   void checkSession();
 }
 function initAdmin(page){
+  if(page==='announcement'){
+    const form=document.getElementById('announcementForm');
+    const input=document.getElementById('announcementInput');
+    const button=form.querySelector('button');
+    const status=document.getElementById('announcementStatus');
+    status.textContent='お知らせを読み込み中…';
+    void loadSettings().then(ok=>{
+      if(!form.isConnected)return;
+      if(!ok){status.textContent='お知らせを取得できませんでした。ページを再読み込みしてください。';return;}
+      input.value=data.announcement||'';
+      input.disabled=button.disabled=false;
+      status.textContent='';
+    });
+    bindSave('announcementForm','announcementStatus',async()=>{
+      const announcement=input.value;
+      await api('settings','PUT',{announcement});
+      data={...data,announcement};
+      updateAnnouncementBadge();
+    });
+  }
   if(page==='records')initRecordsAdmin();
   if(page==='calendar')initCalendarAdmin();
   if(page==='inventory')initInventory(true);
@@ -596,7 +624,7 @@ function initAdmin(page){
     const status=document.getElementById('meetingStatus');
     button.disabled=true;
     try{
-      const body=Object.fromEntries([['meetingStatus','meetingStatusInput'],['meetingDate','meetingDateInput'],['location','locationInput'],['meeting','meetingInput'],['announcement','announcementInput']].map(([key,id])=>[key,document.getElementById(id).value]));
+      const body=Object.fromEntries([['meetingStatus','meetingStatusInput'],['meetingDate','meetingDateInput'],['location','locationInput'],['meeting','meetingInput']].map(([key,id])=>[key,document.getElementById(id).value]));
       const response=await pagesFetch('https://tenmonken-infoweb-2026.rt-earth616.chatgpt.site/api/settings',{method:'PUT',headers:{'content-type':'application/json'},body:JSON.stringify(body)});
       if(!response.ok)throw Error();
       data={...data,...body};
@@ -796,7 +824,7 @@ async function deleteChat(id,button){
 }
 function fill(){
   document.getElementById('meetingStatusInput').value=meetingStatus()||'pending';
-  for(const [id,key] of [['meetingDateInput','meetingDate'],['locationInput','location'],['meetingInput','meeting'],['announcementInput','announcement']]){
+  for(const [id,key] of [['meetingDateInput','meetingDate'],['locationInput','location'],['meetingInput','meeting']]){
     document.getElementById(id).value=data[key]||'';
   }
 }
