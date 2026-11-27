@@ -1,8 +1,9 @@
 const adminSessionStorageKey = 'hercules-admin-token';
 const adminTokenPattern = /^\d{10}\.[a-f0-9-]{36}\.[a-f0-9]{64}$/;
-let adminToken = '';
+let adminToken = '', verifiedAdminToken = '';
 try{adminToken=sessionStorage.getItem(adminSessionStorageKey)||'';}catch{}
 function setAdminToken(token){
+  if(token!==adminToken)verifiedAdminToken='';
   adminToken=token;
   try{
     if(token)sessionStorage.setItem(adminSessionStorageKey,token);
@@ -21,7 +22,13 @@ async function pagesFetch(input, options = {}) {
   const headers = new Headers(options.headers);
   const token=/^\/admin(?:\/|$)/.test(pagePath())?currentAdminToken():'';
   if(token)headers.set('Authorization','Bearer '+token);
-  return fetch(input,{...options,headers,credentials:'omit',redirect:'error'});
+  const response=await fetch(input,{...options,headers,credentials:'omit',redirect:'error'});
+  if(response.status===401&&token&&token===verifiedAdminToken&&token===adminToken){
+    setAdminToken('');
+    const route=pagePath().match(/^\/admin(?:\/([^/]+))?\/?$/);
+    if(route)admin(route[1]||'');
+  }
+  return response;
 }
 function bindPagesLogin(form, onSuccess) {
   form.hidden=false;
@@ -51,6 +58,7 @@ function bindPagesLogin(form, onSuccess) {
       if(!response.ok)throw Error(value.error||'認証できませんでした。');
       if(!adminTokenPattern.test(value.token||''))throw Error('認証結果を確認できませんでした。');
       setAdminToken(value.token);
+      verifiedAdminToken=value.token;
       onSuccess(elapsed());
     }catch(error){status.textContent=error.message+'（'+elapsed()+' 秒）';field.focus();}
     finally{clearInterval(timer);progress.hidden=true;button.textContent=label;button.disabled=false;}
@@ -550,6 +558,7 @@ function admin(page){
   };
   const token=currentAdminToken();
   if(!token){bindPagesLogin(login,open);return;}
+  if(token===verifiedAdminToken){open();return;}
   const status=login.querySelector('#err');
   const button=login.querySelector('button');
   login.hidden=false;
@@ -559,7 +568,7 @@ function admin(page){
     try{
       const response=await pagesFetch(sitesOrigin+'/api/admin/session',{cache:'no-store'});
       if(!login.isConnected)return;
-      if(response.ok){open();return;}
+      if(response.ok){verifiedAdminToken=token;open();return;}
       if(response.status===401){
         setAdminToken('');
         status.textContent='';
@@ -1283,7 +1292,12 @@ function photoGallery(manage=false){
     <dialog id="galleryUploadDialog" class="ops-card edit-dialog" aria-labelledby="galleryUploadTitle" style="width:min(92vw,560px);max-width:92vw;overflow-x:hidden">
     <form id="galleryUpload">
       <div class="ops-toolbar"><h2 id="galleryUploadTitle">写真を追加</h2><button id="galleryUploadClose" class="secondary" type="button">閉じる</button></div>
-      <p class="hint">元ファイルをそのまま公開します。撮影場所など、写真に含まれる情報も保持されます。</p>
+      <ul style="color:#a51f32;padding-inline-start:1.4em;line-height:1.6">
+        <li>他人の顔など、個人を特定できる写真を載せないこと。</li>
+        <li>公共の福祉に反しないこと。</li>
+        <li>利用者全員が写真をダウンロードできます。</li>
+        <li>運営が許可なしに削除する場合があります。</li>
+      </ul>
       <div class="field"><label for="galleryFiles">写真（1回10枚・合計10 MBまで）</label><input id="galleryFiles" style="width:100%;min-width:0" type="file" accept=".jpg,.jpeg,.png,.gif,.webp,.avif,.heic,.heif,image/jpeg,image/png,image/gif,image/webp,image/avif,image/heic,image/heif" multiple required></div>
       <div class="field"><label for="galleryTags">選んだ写真に付けるタグ</label><input id="galleryTags" placeholder="例　観測会、茜浜" aria-describedby="galleryTagHelp"><small id="galleryTagHelp">複数のタグは読点またはカンマで区切ります。</small><div id="galleryTagChoices" class="feature-links" aria-label="既存のタグ"></div></div>
       <button type="submit" class="primary">投稿</button>
@@ -1296,12 +1310,13 @@ function photoGallery(manage=false){
       <div style="display:flex;align-items:center;gap:8px;flex:1 1 180px;min-width:0"><label for="gallerySearch">タグ</label><input id="gallerySearch" type="search" maxlength="40" placeholder="タグで絞り込む" style="min-width:0;flex:1"></div>
       <div style="display:flex;gap:8px;margin-left:auto"><button class="primary" type="submit">検索</button><button class="secondary" type="reset">解除</button></div>
     </form>
-    <div id="gallerySearchTags" class="feature-links" aria-label="検索に使える既存タグ"></div>
+    <div id="gallerySearchTags" class="feature-links" aria-label="検索に使える既存タグ"></div><p id="galleryTagHint" class="hint" hidden>複数選択できます。選んだタグをすべて含む写真を表示します。</p>
     <p id="galleryStatus" role="status"></p>
     <div id="galleryList" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,140px),1fr));gap:12px"></div>
     <button class="secondary" id="galleryMore" type="button" hidden>もっと見る</button>
     <dialog id="galleryViewer" class="ops-card edit-dialog" aria-label="拡大写真" style="width:min(92vw,960px);max-width:92vw">
       <div class="ops-toolbar"><a id="galleryOriginal" class="secondary" download>元ファイルを保存</a><form method="dialog"><button class="secondary" type="submit">閉じる</button></form></div>
+      <p id="gallerySavedAt" class="hint" style="font-size:.78rem"></p>
       <img id="galleryViewerImage" style="display:block;width:100%;max-height:75dvh;object-fit:contain;margin-top:12px" alt="">
     </dialog>
   </section>`;
@@ -1320,23 +1335,28 @@ function initPhotoGallery(manage=false){
   const tagStyle='border-radius:999px;background:#e4f8f2;color:#175749;border:1px solid #a8d7c9;padding:5px 12px';
   const firstPages=new Map();
   const imageRequests=new WeakMap(), imageUrls=new Map();
-  async function loadGalleryImage(image){
-    if(imageUrls.has(image))return imageUrls.get(image);
-    if(imageRequests.has(image))return imageRequests.get(image);
+  const originalRequests=new WeakMap(), originalUrls=new Map();
+  async function loadGalleryImage(image,full=false){
+    const separate=full&&image.hasAttribute('data-thumbnail');
+    const requests=separate?originalRequests:imageRequests;
+    const urls=separate?originalUrls:imageUrls;
+    if(urls.has(image))return urls.get(image);
+    if(requests.has(image))return requests.get(image);
     const task=(async()=>{
       try{
-        const response=await pagesFetch(sitesOrigin+'/api/photos/'+encodeURIComponent(image.dataset.galleryImage));
+        const endpoint=sitesOrigin+'/api/photos/'+encodeURIComponent(image.dataset.galleryImage);
+        const response=await pagesFetch(!full&&image.hasAttribute('data-thumbnail')?endpoint+'?preview=1':endpoint);
         if(!response.ok)throw Error('写真を取得できませんでした。');
         const blob=await response.blob();
         if(!image.isConnected)return '';
         const url=URL.createObjectURL(blob);
-        imageUrls.set(image,url);
-        image.src=url;
+        urls.set(image,url);
+        if(!separate)image.src=url;
         return url;
       }catch{return '';}
-      finally{imageRequests.delete(image);}
+      finally{requests.delete(image);}
     })();
-    imageRequests.set(image,task);
+    requests.set(image,task);
     return task;
   }
   const imageObserver='IntersectionObserver' in window?new IntersectionObserver(entries=>{
@@ -1350,6 +1370,8 @@ function initPhotoGallery(manage=false){
     imageObserver?.disconnect();
     for(const url of imageUrls.values())URL.revokeObjectURL(url);
     imageUrls.clear();
+    for(const url of originalUrls.values())URL.revokeObjectURL(url);
+    originalUrls.clear();
   }
   const galleryLifecycle=new MutationObserver(()=>{
     if(list.isConnected)return;
@@ -1357,16 +1379,18 @@ function initPhotoGallery(manage=false){
     galleryLifecycle.disconnect();
   });
   galleryLifecycle.observe(document.getElementById('app'),{childList:true});
-  let next=null, revision=0, tag='', previousTags='';
+  let next=null, revision=0, typedTag='', previousTags='';
+  const chosenTags=new Set();
   async function load(append=false){
     const request=++revision;
     const params=new URLSearchParams();
-    if(tag)params.set('tag',tag);
+    const tags=[...new Set([...chosenTags,...(typedTag?[typedTag]:[])])].sort();
+    for(const tag of tags)params.append('tag',tag);
     if(append&&next)params.set('before',next);
     more.disabled=true;
     status.textContent='写真を読み込み中…';
     try {
-      const key=tag;
+      const key=JSON.stringify(tags);
       const cached=append?null:firstPages.get(key);
       const page=cached&&Date.now()-cached.at<15000?cached.page:await api('photos?'+params);
       if(request===revision&&!append&&page!==cached?.page){
@@ -1380,12 +1404,13 @@ function initPhotoGallery(manage=false){
         const tagButtons=attribute=>page.tags.map(label=>`<button class="secondary" style="${tagStyle}" type="button" ${attribute}="${esc(label)}">${esc(label)}</button>`).join('');
         choices.innerHTML=tagButtons('data-gallery-choice');
         searchTags.innerHTML=tagButtons('data-gallery-filter');
+        byId('galleryTagHint').hidden=!page.tags.length;
       }
-      for(const chip of searchTags.children)chip.setAttribute('aria-pressed',String(chip.dataset.galleryFilter===tag));
+
       const cards=page.photos.map((photo,index)=>{
         const tags=photo.tags.map(label=>`<button class="secondary" style="${tagStyle}" type="button" data-gallery-tag="${esc(label)}">${esc(label)}</button>`).join('');
         return `<article class="ops-card" style="padding:8px;min-width:0;content-visibility:auto;contain-intrinsic-size:auto 180px">
-          <button class="secondary" type="button" data-gallery-view aria-label="写真を拡大" style="display:block;width:100%;padding:0;border:0"><img data-gallery-image="${esc(photo.id)}" data-filename="${esc(photo.filename||'写真.jpg')}"${!append&&index<2?' data-gallery-eager':''} alt="${esc(photo.tags.join('、')||'部活動の写真')}" decoding="async" style="display:block;width:100%;aspect-ratio:4/3;object-fit:cover;border-radius:9px"></button>
+          <button class="secondary" type="button" data-gallery-view aria-label="写真を拡大" style="display:block;width:100%;padding:0;border:0"><img data-gallery-image="${esc(photo.id)}" data-filename="${esc(photo.filename||'写真.jpg')}" data-saved-at="${esc(photo.savedAt||'')}"${photo.hasThumbnail?' data-thumbnail':''}${!append&&index<2?' data-gallery-eager':''} alt="${esc(photo.tags.join('、')||'部活動の写真')}" decoding="async" style="display:block;width:100%;aspect-ratio:4/3;object-fit:cover;border-radius:9px"></button>
           <div class="feature-links" style="margin-top:6px;overflow-wrap:anywhere">${tags}${manage?`<button class="secondary" type="button" data-gallery-delete="${esc(photo.id)}">削除</button>`:''}</div>
         </article>`;
       }).join('');
@@ -1405,10 +1430,33 @@ function initPhotoGallery(manage=false){
     }catch(error){
       if(request===revision)status.textContent=error.message;
     }finally{
-      if(request===revision)more.disabled=false;
+      if(request===revision){more.disabled=false;syncSearchChips();}
     }
   }
-  const applyTag=value=>{search.value=value;tag=value.trim();more.hidden=true;void load();};
+  function syncSearchChips(){
+    for(const chip of searchTags.children){
+      const active=chosenTags.has(chip.dataset.galleryFilter);
+      chip.setAttribute('aria-pressed',String(active));
+      chip.style.background=active?'#175749':'#e4f8f2';
+      chip.style.color=active?'#fff':'#175749';
+    }
+  }
+  function applyTags(){
+    syncSearchChips();
+    more.hidden=true;
+    void load();
+  }
+  function toggleSearchTag(tag){
+    if(chosenTags.has(tag))chosenTags.delete(tag);
+    else if(chosenTags.size+(typedTag&&!chosenTags.has(typedTag)?1:0)<12)chosenTags.add(tag);
+    else{status.textContent='タグは12個まで選べます。';return;}
+    applyTags();
+  }
+  function clearSearch(){
+    search.value=typedTag='';
+    chosenTags.clear();
+    applyTags();
+  }
   filter.onsubmit=event=>{
     event.preventDefault();
     const query=search.value.trim();
@@ -1416,12 +1464,14 @@ function initPhotoGallery(manage=false){
       location.assign('/HERCULES/photos/cat/');
       return;
     }
-    applyTag(query);
+    if(query&&!chosenTags.has(query)&&chosenTags.size>=12){status.textContent='タグは12個まで選べます。';return;}
+    typedTag=query;
+    applyTags();
   };
-  filter.onreset=event=>{event.preventDefault();applyTag('');};
+  filter.onreset=event=>{event.preventDefault();clearSearch();};
   searchTags.onclick=event=>{
     const chip=event.target.closest('[data-gallery-filter]');
-    if(chip)applyTag(chip.dataset.galleryFilter);
+    if(chip)toggleSearchTag(chip.dataset.galleryFilter);
   };
   more.onclick=()=>void load(true);
   const viewer=byId('galleryViewer'), enlarged=byId('galleryViewerImage');
@@ -1434,11 +1484,13 @@ function initPhotoGallery(manage=false){
       imageObserver?.unobserve(image);
       preview.disabled=true;
       try{
-        const url=await loadGalleryImage(image);
+        const url=await loadGalleryImage(image,true);
         if(!preview.isConnected)return;
         if(!url){status.textContent='写真を読み込めませんでした。もう一度タップしてください。';return;}
         enlarged.src=url;
         enlarged.alt=image.alt;
+        const saved=image.dataset.savedAt;
+        byId('gallerySavedAt').textContent='保存日　'+(saved?displayDate(saved):'記録なし');
         original.href=url;
         original.download=image.dataset.filename;
         if(!viewer.open)viewer.showModal();
@@ -1446,7 +1498,7 @@ function initPhotoGallery(manage=false){
       return;
     }
     const chip=event.target.closest('[data-gallery-tag]');
-    if(chip){applyTag(chip.dataset.galleryTag);return;}
+    if(chip){toggleSearchTag(chip.dataset.galleryTag);return;}
     const remove=event.target.closest('[data-gallery-delete]');
     if(!manage||!remove||!confirm('この写真をギャラリーから削除しますか？'))return;
     remove.disabled=true;
@@ -1474,6 +1526,29 @@ function initPhotoGallery(manage=false){
   uploadDialog.addEventListener('cancel',event=>{
     if(button.disabled)event.preventDefault();
   });
+  function fileAsBase64(file){
+    return new Promise((resolve,reject)=>{
+      const reader=new FileReader();
+      reader.onload=()=>resolve(String(reader.result).split(',')[1]);
+      reader.onerror=()=>reject(Error('写真を読み込めませんでした。'));
+      reader.readAsDataURL(file);
+    });
+  }
+  async function galleryThumbnail(file){
+    const url=URL.createObjectURL(file);
+    try{
+      const image=new Image();
+      image.src=url;
+      await image.decode();
+      const scale=Math.min(1,320/Math.max(image.naturalWidth,image.naturalHeight));
+      const canvas=document.createElement('canvas');
+      canvas.width=Math.max(1,Math.round(image.naturalWidth*scale));
+      canvas.height=Math.max(1,Math.round(image.naturalHeight*scale));
+      canvas.getContext('2d',{alpha:false}).drawImage(image,0,0,canvas.width,canvas.height);
+      const preview=await new Promise(resolve=>canvas.toBlob(resolve,'image/jpeg',.7));
+      if(preview&&preview.size<=40960)return await fileAsBase64(preview);
+    }catch{}finally{URL.revokeObjectURL(url);}
+  }
   let selection=[];
   input.onchange=()=>{selection=Array.from(input.files,file=>({file,id:crypto.randomUUID()}));};
   form.onsubmit=async event=>{
@@ -1495,13 +1570,8 @@ function initPhotoGallery(manage=false){
       const photos=[];
       for(const {file,id} of selection){
         result.textContent=`写真を準備中（${photos.length+1}／${selection.length}）…`;
-        const image=await new Promise((resolve,reject)=>{
-          const reader=new FileReader();
-          reader.onload=()=>resolve(String(reader.result).split(',')[1]);
-          reader.onerror=()=>reject(Error('写真を読み込めませんでした。'));
-          reader.readAsDataURL(file);
-        });
-        photos.push({id,image,filename:file.name});
+        const [image,thumbnail]=await Promise.all([fileAsBase64(file),galleryThumbnail(file)]);
+        photos.push({id,image,filename:file.name,thumbnail});
       }
       result.textContent='写真を保存中…';
       await api('photos','POST',{photos,tags});
@@ -1512,7 +1582,7 @@ function initPhotoGallery(manage=false){
       notice.hidden=false;
       uploadDialog.close();
       firstPages.clear();
-      applyTag('');
+      clearSearch();
     }catch(error){result.textContent=error.message+'（経過 '+seconds()+' 秒）';}
     finally{
       clearInterval(timer);
