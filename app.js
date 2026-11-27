@@ -1319,6 +1319,44 @@ function initPhotoGallery(manage=false){
   const searchTags=byId('gallerySearchTags');
   const tagStyle='border-radius:999px;background:#e4f8f2;color:#175749;border:1px solid #a8d7c9;padding:5px 12px';
   const firstPages=new Map();
+  const imageRequests=new WeakMap(), imageUrls=new Map();
+  async function loadGalleryImage(image){
+    if(imageUrls.has(image))return imageUrls.get(image);
+    if(imageRequests.has(image))return imageRequests.get(image);
+    const task=(async()=>{
+      try{
+        const response=await pagesFetch(sitesOrigin+'/api/photos/'+encodeURIComponent(image.dataset.galleryImage));
+        if(!response.ok)throw Error('写真を取得できませんでした。');
+        const blob=await response.blob();
+        if(!image.isConnected)return '';
+        const url=URL.createObjectURL(blob);
+        imageUrls.set(image,url);
+        image.src=url;
+        return url;
+      }catch{return '';}
+      finally{imageRequests.delete(image);}
+    })();
+    imageRequests.set(image,task);
+    return task;
+  }
+  const imageObserver='IntersectionObserver' in window?new IntersectionObserver(entries=>{
+    for(const entry of entries){
+      if(!entry.isIntersecting)continue;
+      imageObserver.unobserve(entry.target);
+      void loadGalleryImage(entry.target);
+    }
+  },{rootMargin:'160px'}):null;
+  function releaseGalleryImages(){
+    imageObserver?.disconnect();
+    for(const url of imageUrls.values())URL.revokeObjectURL(url);
+    imageUrls.clear();
+  }
+  const galleryLifecycle=new MutationObserver(()=>{
+    if(list.isConnected)return;
+    releaseGalleryImages();
+    galleryLifecycle.disconnect();
+  });
+  galleryLifecycle.observe(document.getElementById('app'),{childList:true});
   let next=null, revision=0, tag='', previousTags='';
   async function load(append=false){
     const request=++revision;
@@ -1345,15 +1383,23 @@ function initPhotoGallery(manage=false){
       }
       for(const chip of searchTags.children)chip.setAttribute('aria-pressed',String(chip.dataset.galleryFilter===tag));
       const cards=page.photos.map((photo,index)=>{
-        const url=sitesOrigin+'/api/photos/'+encodeURIComponent(photo.id);
         const tags=photo.tags.map(label=>`<button class="secondary" style="${tagStyle}" type="button" data-gallery-tag="${esc(label)}">${esc(label)}</button>`).join('');
         return `<article class="ops-card" style="padding:8px;min-width:0;content-visibility:auto;contain-intrinsic-size:auto 180px">
-          <button class="secondary" type="button" data-gallery-view aria-label="写真を拡大" style="display:block;width:100%;padding:0;border:0"><img src="${url}" alt="${esc(photo.tags.join('、')||'部活動の写真')}" loading="${!append&&index<2?'eager':'lazy'}" decoding="async" style="display:block;width:100%;aspect-ratio:4/3;object-fit:cover;border-radius:9px"></button>
+          <button class="secondary" type="button" data-gallery-view aria-label="写真を拡大" style="display:block;width:100%;padding:0;border:0"><img data-gallery-image="${esc(photo.id)}"${!append&&index<2?' data-gallery-eager':''} alt="${esc(photo.tags.join('、')||'部活動の写真')}" decoding="async" style="display:block;width:100%;aspect-ratio:4/3;object-fit:cover;border-radius:9px"></button>
           <div class="feature-links" style="margin-top:6px;overflow-wrap:anywhere">${tags}${manage?`<button class="secondary" type="button" data-gallery-delete="${esc(photo.id)}">削除</button>`:''}</div>
         </article>`;
       }).join('');
+      const startAt=append?list.children.length:0;
       if(append)list.insertAdjacentHTML('beforeend',cards);
-      else list.innerHTML=cards;
+      else{
+        releaseGalleryImages();
+        list.innerHTML=cards;
+      }
+      for(const card of Array.from(list.children).slice(startAt)){
+        const image=card.querySelector('[data-gallery-image]');
+        if(!imageObserver||image.hasAttribute('data-gallery-eager'))void loadGalleryImage(image);
+        else imageObserver.observe(image);
+      }
       status.textContent=list.children.length?'':'該当する写真がありません。';
       more.hidden=!next;
     }catch(error){
@@ -1376,9 +1422,16 @@ function initPhotoGallery(manage=false){
     const preview=event.target.closest('[data-gallery-view]');
     if(preview){
       const image=preview.querySelector('img');
-      enlarged.src=image.src;
-      enlarged.alt=image.alt;
-      viewer.showModal();
+      imageObserver?.unobserve(image);
+      preview.disabled=true;
+      try{
+        const url=await loadGalleryImage(image);
+        if(!preview.isConnected)return;
+        if(!url){status.textContent='写真を読み込めませんでした。もう一度タップしてください。';return;}
+        enlarged.src=url;
+        enlarged.alt=image.alt;
+        if(!viewer.open)viewer.showModal();
+      }finally{preview.disabled=false;}
       return;
     }
     const chip=event.target.closest('[data-gallery-tag]');
