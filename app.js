@@ -1379,7 +1379,18 @@ function initPhotoGallery(manage=false){
       void loadGalleryImage(entry.target);
     }
   },{rootMargin:'160px'}):null;
-  function releaseGalleryImages(){
+  function releaseGalleryImages(container){
+    if(container){
+      for(const image of container.querySelectorAll('[data-gallery-image]')){
+        imageObserver?.unobserve(image);
+        for(const urls of [imageUrls,originalUrls]){
+          const url=urls.get(image);
+          if(url)URL.revokeObjectURL(url);
+          urls.delete(image);
+        }
+      }
+      return;
+    }
     imageObserver?.disconnect();
     for(const url of imageUrls.values())URL.revokeObjectURL(url);
     imageUrls.clear();
@@ -1429,7 +1440,7 @@ function initPhotoGallery(manage=false){
       const startAt=append?list.children.length:0;
       if(append)list.insertAdjacentHTML('beforeend',cards);
       else{
-        releaseGalleryImages();
+        releaseGalleryImages(list);
         list.innerHTML=cards;
       }
       for(const card of Array.from(list.children).slice(startAt)){
@@ -1563,16 +1574,25 @@ function initPhotoGallery(manage=false){
       try{
         const page=await api('photos?deletionRequests=1'+(append&&cursor?'&before='+cursor:''));
         if(request!==revision||!requestDialog.open)return;
-        if(!append)requestsList.replaceChildren();
+        if(!append){
+          releaseGalleryImages(requestsList);
+          requestsList.replaceChildren();
+        }
+        const startAt=requestsList.children.length;
         const cards=page.requests.map(photo=>`<article class="ops-post">
           <p><strong>${esc(photo.filename)}</strong></p>
           <p class="hint">申請日　${esc(displayDate(photo.requestedAt))}${photo.tags.length?' ／ '+esc(photo.tags.join('、')):''}</p>
           <div class="feature-links">
-            <button class="secondary" type="button" data-gallery-view>写真を見る<img hidden alt="${esc(photo.filename)}" data-gallery-image="${esc(photo.id)}" data-filename="${esc(photo.filename)}" data-saved-at="${esc(photo.savedAt||'')}"${photo.hasThumbnail?' data-thumbnail':''}></button>
+            <button class="secondary" type="button" data-gallery-view style="display:grid;gap:6px;width:min(100%,220px);padding:6px"><img alt="${esc(photo.filename)}" data-gallery-image="${esc(photo.id)}" data-filename="${esc(photo.filename)}" data-saved-at="${esc(photo.savedAt||'')}"${photo.hasThumbnail?' data-thumbnail':''} decoding="async" style="display:block;width:100%;aspect-ratio:4/3;object-fit:contain;background:#f3f7fb;border-radius:8px"><span>写真を拡大</span></button>
             <button class="secondary" type="button" data-gallery-approve="${esc(photo.id)}">写真を削除</button>
           </div>
         </article>`).join('');
         requestsList.insertAdjacentHTML('beforeend',cards);
+        for(const card of Array.from(requestsList.children).slice(startAt)){
+          const image=card.querySelector('[data-gallery-image]');
+          if(imageObserver)imageObserver.observe(image);
+          else void loadGalleryImage(image);
+        }
         cursor=page.next;
         requestMore.hidden=!cursor;
         requestsStatus.textContent=requestsList.children.length?'':'削除申請はありません。';
@@ -1580,6 +1600,12 @@ function initPhotoGallery(manage=false){
         if(request===revision)requestsStatus.textContent=error.message;
       }finally{if(request===revision)requestMore.disabled=false;}
     }
+    requestDialog.addEventListener('close',()=>{
+      if(requestDialog.open)return;
+      releaseGalleryImages(requestsList);
+      requestsList.replaceChildren();
+      requestMore.hidden=true;
+    });
     byId('galleryRequestListOpen').onclick=()=>{requestDialog.showModal();void refreshRequests();};
     requestMore.onclick=()=>void refreshRequests(true);
     requestsList.onclick=async event=>{
