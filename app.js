@@ -1288,7 +1288,7 @@ function featurePage(title){
 }
 function photoGallery(manage=false){
   return `<section class="feature-stack">
-    <div class="ops-toolbar">${manage?'<span></span>':'<h1 style="margin:0">写真</h1>'}<button id="galleryAdd" type="button" class="primary">追加</button></div>
+    <div class="ops-toolbar">${manage?'<span></span>':'<h1 style="margin:0">写真</h1>'}<div class="feature-links">${manage?'<button id="galleryRequestListOpen" type="button" class="secondary">削除申請一覧</button>':''}<button id="galleryAdd" type="button" class="primary">追加</button></div></div>
     <dialog id="galleryUploadDialog" class="ops-card edit-dialog" aria-labelledby="galleryUploadTitle" style="width:min(92vw,560px);max-width:92vw;overflow-x:hidden">
     <form id="galleryUpload">
       <div class="ops-toolbar"><h2 id="galleryUploadTitle">写真を追加</h2><button id="galleryUploadClose" class="secondary" type="button">閉じる</button></div>
@@ -1315,10 +1315,17 @@ function photoGallery(manage=false){
     <div id="galleryList" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,140px),1fr));gap:12px"></div>
     <button class="secondary" id="galleryMore" type="button" hidden>もっと見る</button>
     <dialog id="galleryViewer" class="ops-card edit-dialog" aria-label="拡大写真" style="width:min(92vw,960px);max-width:92vw">
-      <div class="ops-toolbar"><a id="galleryOriginal" class="secondary" download>元ファイルを保存</a><div style="display:grid;gap:6px;justify-items:center"><form method="dialog"><button class="secondary" type="submit">閉じる</button></form><a id="galleryDeletionRequest" style="font-size:.8rem;color:#345d83;text-underline-offset:3px">削除申請</a></div></div>
+      <div class="ops-toolbar"><a id="galleryOriginal" class="secondary" download>元ファイルを保存</a><div style="display:grid;gap:6px;justify-items:center"><form method="dialog"><button class="secondary" type="submit">閉じる</button></form><a id="galleryDeletionRequest" href="#galleryRequestStatus" style="font-size:.8rem;color:#345d83;text-underline-offset:3px">削除申請</a></div></div>
+      <p id="galleryRequestStatus" class="hint" role="status" hidden></p>
       <p id="gallerySavedAt" class="hint" style="font-size:.78rem"></p>
       <img id="galleryViewerImage" style="display:block;width:100%;max-height:75dvh;object-fit:contain;margin-top:12px" alt="">
     </dialog>
+    ${manage?`<dialog id="galleryRequestListDialog" class="ops-card edit-dialog" aria-labelledby="galleryRequestsTitle" style="width:min(92vw,600px)">
+      <div class="ops-toolbar"><h2 id="galleryRequestsTitle">削除申請一覧</h2><form method="dialog"><button class="secondary">閉じる</button></form></div>
+      <p id="galleryRequestsStatus" role="status"></p>
+      <div id="galleryRequestsList" class="feature-stack"></div>
+      <button id="galleryRequestsMore" class="secondary" type="button" hidden>もっと見る</button>
+    </dialog>`:''}
   </section>`;
 }
 function renderPhotos(){
@@ -1481,32 +1488,61 @@ function initPhotoGallery(manage=false){
   more.onclick=()=>void load(true);
   const viewer=byId('galleryViewer'), enlarged=byId('galleryViewerImage');
   const original=byId('galleryOriginal'), deletionRequest=byId('galleryDeletionRequest');
+  const requestStatus=byId('galleryRequestStatus');
+  const submittedRequests=new Set();
+  let displayedPhoto='', submittingRequest=false;
+  function showRequestResult(message){
+    requestStatus.textContent=message;
+    requestStatus.hidden=!message;
+  }
   viewer.addEventListener('close',()=>{
+    displayedPhoto='';
     enlarged.removeAttribute('src');
     original.removeAttribute('href');
-    deletionRequest.removeAttribute('href');
   });
+  deletionRequest.onclick=async event=>{
+    event.preventDefault();
+    const photoId=displayedPhoto;
+    if(!photoId||submittingRequest||submittedRequests.has(photoId))return;
+    if(!confirm('この写真の削除を運営に申請しますか？'))return;
+    submittingRequest=true;
+    deletionRequest.setAttribute('aria-disabled','true');
+    showRequestResult('削除申請を送信中…');
+    try{
+      await api('photos?deletionRequests=1','POST',{photoId});
+      submittedRequests.add(photoId);
+      if(displayedPhoto===photoId)showRequestResult('削除申請しました。');
+    }catch(error){
+      if(displayedPhoto===photoId)showRequestResult(error.message);
+    }finally{
+      submittingRequest=false;
+      deletionRequest.setAttribute('aria-disabled',String(submittedRequests.has(displayedPhoto)));
+    }
+  };
+  async function openGalleryPhoto(preview,feedback,sourceDialog){
+    const image=preview.querySelector('img');
+    imageObserver?.unobserve(image);
+    preview.disabled=true;
+    try{
+      const url=await loadGalleryImage(image,true);
+      if(!preview.isConnected||(sourceDialog&&!sourceDialog.open))return;
+      if(!url){feedback.textContent='写真を読み込めませんでした。もう一度タップしてください。';return;}
+      enlarged.src=url;
+      enlarged.alt=image.alt;
+      const saved=image.dataset.savedAt;
+      byId('gallerySavedAt').textContent='保存日　'+(saved?displayDate(saved):'記録なし');
+      original.href=url;
+      original.download=image.dataset.filename;
+      displayedPhoto=image.dataset.galleryImage;
+      const submitted=submittedRequests.has(displayedPhoto);
+      deletionRequest.setAttribute('aria-disabled',String(submitted||submittingRequest));
+      showRequestResult(submitted?'削除申請しました。':'');
+      if(!viewer.open)viewer.showModal();
+    }finally{preview.disabled=false;}
+  }
   list.onclick=async event=>{
     const preview=event.target.closest('[data-gallery-view]');
-    if(preview){
-      const image=preview.querySelector('img');
-      imageObserver?.unobserve(image);
-      preview.disabled=true;
-      try{
-        const url=await loadGalleryImage(image,true);
-        if(!preview.isConnected)return;
-        if(!url){status.textContent='写真を読み込めませんでした。もう一度タップしてください。';return;}
-        enlarged.src=url;
-        enlarged.alt=image.alt;
-        const saved=image.dataset.savedAt;
-        byId('gallerySavedAt').textContent='保存日　'+(saved?displayDate(saved):'記録なし');
-        original.href=url;
-        original.download=image.dataset.filename;
-        deletionRequest.href='/HERCULES/ikenbako/?photoDeletion='+encodeURIComponent(image.dataset.galleryImage);
-        if(!viewer.open)viewer.showModal();
-      }finally{preview.disabled=false;}
-      return;
-    }
+    if(preview){await openGalleryPhoto(preview,status);return;}
     const chip=event.target.closest('[data-gallery-tag]');
     if(chip){toggleSearchTag(chip.dataset.galleryTag);return;}
     const remove=event.target.closest('[data-gallery-delete]');
@@ -1516,6 +1552,51 @@ function initPhotoGallery(manage=false){
     catch(error){status.textContent=error.message;}
     finally{remove.disabled=false;}
   };
+  if(manage){
+    const requestDialog=byId('galleryRequestListDialog'), requestsList=byId('galleryRequestsList');
+    const requestsStatus=byId('galleryRequestsStatus'), requestMore=byId('galleryRequestsMore');
+    let cursor=null, revision=0;
+    async function refreshRequests(append=false){
+      const request=++revision;
+      requestMore.disabled=true;
+      requestsStatus.textContent='削除申請を読み込み中…';
+      try{
+        const page=await api('photos?deletionRequests=1'+(append&&cursor?'&before='+cursor:''));
+        if(request!==revision||!requestDialog.open)return;
+        if(!append)requestsList.replaceChildren();
+        const cards=page.requests.map(photo=>`<article class="ops-post">
+          <p><strong>${esc(photo.filename)}</strong></p>
+          <p class="hint">申請日　${esc(displayDate(photo.requestedAt))}${photo.tags.length?' ／ '+esc(photo.tags.join('、')):''}</p>
+          <div class="feature-links">
+            <button class="secondary" type="button" data-gallery-view>写真を見る<img hidden alt="${esc(photo.filename)}" data-gallery-image="${esc(photo.id)}" data-filename="${esc(photo.filename)}" data-saved-at="${esc(photo.savedAt||'')}"${photo.hasThumbnail?' data-thumbnail':''}></button>
+            <button class="secondary" type="button" data-gallery-approve="${esc(photo.id)}">写真を削除</button>
+          </div>
+        </article>`).join('');
+        requestsList.insertAdjacentHTML('beforeend',cards);
+        cursor=page.next;
+        requestMore.hidden=!cursor;
+        requestsStatus.textContent=requestsList.children.length?'':'削除申請はありません。';
+      }catch(error){
+        if(request===revision)requestsStatus.textContent=error.message;
+      }finally{if(request===revision)requestMore.disabled=false;}
+    }
+    byId('galleryRequestListOpen').onclick=()=>{requestDialog.showModal();void refreshRequests();};
+    requestMore.onclick=()=>void refreshRequests(true);
+    requestsList.onclick=async event=>{
+      const preview=event.target.closest('[data-gallery-view]');
+      if(preview){await openGalleryPhoto(preview,requestsStatus,requestDialog);return;}
+      const remove=event.target.closest('[data-gallery-approve]');
+      if(!remove||!confirm('申請された写真をギャラリーから削除しますか？'))return;
+      remove.disabled=true;
+      try{
+        await api('photos/'+encodeURIComponent(remove.dataset.galleryApprove),'DELETE');
+        firstPages.clear();
+        await refreshRequests();
+        await load();
+      }catch(error){requestsStatus.textContent=error.message;}
+      finally{remove.disabled=false;}
+    };
+  }
   const form=byId('galleryUpload'), input=byId('galleryFiles'), labels=byId('galleryTags'), result=byId('galleryUploadStatus');
   const button=form.querySelector('button[type="submit"]');
   const choices=byId('galleryTagChoices');
@@ -2708,11 +2789,6 @@ function renderComingSoon(title){
 }
 async function sendFeedback(e){e.preventDefault();let status=document.getElementById('feedbackStatus'),message=document.getElementById('feedbackMessage').value.trim();status.textContent='送信中…';try{let r=await pagesFetch('https://tenmonken-infoweb-2026.rt-earth616.chatgpt.site/api/feedback',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({category:document.getElementById('feedbackCategory').value,message})}),x=await r.json();if(!r.ok)throw Error(x.error||'送信できませんでした');document.getElementById('feedbackMessage').value='';status.textContent='送信しました。ありがとうございます。'}catch(err){status.textContent=err.message}}
 async function renderFeedback(){document.title='意見箱 | ヘラクレス';document.getElementById('app').innerHTML=`<div class="shell">${siteHeader()}<main class="chat-wrap"><section class="feedback"><h1>意見箱</h1><p class="hint">ページへの要望や気づいた点を匿名で送れます。個人情報は入力しないでください。</p><form id="feedbackForm"><div class="field"><label for="feedbackCategory">カテゴリー</label><select id="feedbackCategory"><option>改善の提案</option><option>不具合の報告</option><option>掲載情報の修正</option><option>その他</option></select></div><div class="field"><span id="feedbackMessageHeading">意見内容（1,000字以内）</span><textarea id="feedbackMessage" aria-labelledby="feedbackMessageHeading" maxlength="1000" required></textarea></div><button class="primary" type="submit">意見を送る</button><span id="feedbackStatus" class="hint" aria-live="polite"></span></form></section></main></div>`;document.getElementById('feedbackForm').onsubmit=sendFeedback;
-  const photoId=new URLSearchParams(location.search).get('photoDeletion');
-  if(photoId&&/^[a-f0-9-]{36}$/.test(photoId)){
-    document.getElementById('feedbackCategory').value='掲載情報の修正';
-    document.getElementById('feedbackMessage').value='写真の削除申請\n写真ID：'+photoId+'\n削除を希望する理由：';
-  }
 }
 let nickname='';
 async function renderChat(){
