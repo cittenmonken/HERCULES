@@ -2724,7 +2724,24 @@ function initRecordsAdmin(){
   }
   async function refresh(){
     const records=await api('records');
-    list.innerHTML=records.length?records.map(record=>`<p><button class="secondary" type="button" data-record-id="${record.id}">編集</button> ${esc(displayDate(record.record_date))}　${esc(record.title)}</p>`).join(''):'<p>登録された記録はありません。</p>';
+    list.innerHTML=records.length?records.map(record=>`<p><button class="secondary" type="button" data-record-id="${record.id}">編集</button> <button class="secondary" type="button" data-delete-record="${record.id}">削除</button> ${esc(displayDate(record.record_date))}　${esc(record.title)}</p>`).join(''):'<p>登録された記録はありません。</p>';
+    for(const button of list.querySelectorAll('[data-delete-record]')){
+      button.onclick=async()=>{
+        const record=records.find(item=>item.id===Number(button.dataset.deleteRecord));
+        if (!record || button.disabled || !confirm('「'+record.title+'」を削除しますか？')) return;
+        const row=button.closest('p');
+        for(const control of row.querySelectorAll('button')) control.disabled=true;
+        try {
+          await api('records/'+record.id,'DELETE');
+          row.remove();
+          if (!list.querySelector('[data-record-id]')) list.textContent='登録された記録はありません。';
+          listStatus.textContent='「'+record.title+'」を削除しました。';
+        } catch(error) {
+          listStatus.textContent=error.message;
+          for(const control of row.querySelectorAll('button')) control.disabled=false;
+        }
+      };
+    }
     for(const button of list.querySelectorAll('[data-record-id]')){
       button.onclick=()=>{
         const record=records.find(record=>record.id===Number(button.dataset.recordId));
