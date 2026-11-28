@@ -2806,6 +2806,8 @@ const externalServiceGroups=[
   ]],
   ['大学・学生団体',[
     ['千葉工業大学','https://chibatech.ac.jp/'],
+    ['千葉工業大学 惑星探査研究センター（PERC）','https://www.perc.it-chiba.ac.jp/'],
+    ['千葉工業大学 天文学研究センター（ARC）','https://www.arc.chibatech.ac.jp/'],
     ['千葉工業大学 学友会執行委員会','https://cit-gakuyu.com/'],
     ['千葉工業大学 文化会','https://sites.google.com/view/citbunka/%E3%83%9B%E3%83%BC%E3%83%A0'],
     ['千葉工業大学 クラブ・大学祭','https://chibatech.ac.jp/about/support/extra_activities/']
@@ -2829,6 +2831,15 @@ const externalServiceGroups=[
     ['ispace　株式会社ispace','https://www.ispace-inc.com/ja/company-jp/','日本'],
     ['国土交通省 宇宙庁（2028年 予定）',null,'日本'],
     ['CNSA　中国国家航天局',null,'中国']
+  ]],
+  ['天文学の学会',[
+    ['日本惑星科学会','https://www.wakusei.jp/'],
+    ['日本天文学会','https://www.asj.or.jp/jp/'],
+    ['日本地球惑星科学連合（JpGU）','https://www.jpgu.org/'],
+    ['国際天文学連合（IAU）','https://www.iau.org/about'],
+    ['アメリカ天文学会（AAS）','https://aas.org/about-aas'],
+    ['英国王立天文学会（RAS）','https://ras.ac.uk/royal-astronomical-society'],
+    ['ヨーロッパ天文学会（EAS）','https://eas.unige.ch/']
   ]],
   ['天文の資格・検定',[
     ['天文宇宙検定　公式サイト','https://www.astro-test.org/'],
