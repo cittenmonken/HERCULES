@@ -1405,6 +1405,7 @@ function initPhotoGallery(manage=false){
   galleryLifecycle.observe(document.getElementById('app'),{childList:true});
   let next=null, revision=0, typedTag='', previousTags='';
   const chosenTags=new Set();
+  const deletions=new Map(), submissions=new Map();
   async function load(append=false){
     const request=++revision;
     const params=new URLSearchParams();
@@ -1434,7 +1435,8 @@ function initPhotoGallery(manage=false){
         const tags=expandableTags(photo.tags,'data-gallery-tag',4);
         return `<article class="ops-card" style="padding:8px;min-width:0;content-visibility:auto;contain-intrinsic-size:auto 180px">
           <button class="secondary" type="button" data-gallery-view aria-label="写真を拡大" style="display:block;width:100%;padding:0;border:0"><img data-gallery-image="${esc(photo.id)}" data-filename="${esc(photo.filename||'写真.jpg')}" data-saved-at="${esc(photo.savedAt||'')}"${photo.hasThumbnail?' data-thumbnail':''}${!append&&index<2?' data-gallery-eager':''} alt="${esc(photo.tags.join('、')||'部活動の写真')}" decoding="async" style="display:block;width:100%;aspect-ratio:4/3;object-fit:cover;border-radius:9px"></button>
-          <div class="feature-links" style="margin-top:6px;overflow-wrap:anywhere">${tags}${manage?`<button class="secondary" type="button" data-gallery-delete="${esc(photo.id)}">削除</button>`:''}</div>
+          <div class="feature-links" style="margin-top:6px;overflow-wrap:anywhere">${tags}${manage?`<button class="secondary" type="button" data-gallery-delete="${esc(photo.id)}">削除</button><output class="hint" data-gallery-delete-time="${esc(photo.id)}" aria-live="off"></output>`:''}</div>
+          <output class="hint" data-gallery-request-time="${esc(photo.id)}" aria-live="off" hidden></output>
         </article>`;
       }).join('');
       const startAt=append?list.children.length:0;
@@ -1448,6 +1450,8 @@ function initPhotoGallery(manage=false){
         if(!imageObserver||image.hasAttribute('data-gallery-eager'))void loadGalleryImage(image);
         else imageObserver.observe(image);
       }
+      for(const id of deletions.keys())paintDeletion(id);
+      for(const id of submissions.keys())paintRequest(id);
       status.textContent=list.children.length?'':'該当する写真がありません。';
       more.hidden=!next;
     }catch(error){
@@ -1500,35 +1504,82 @@ function initPhotoGallery(manage=false){
   const viewer=byId('galleryViewer'), enlarged=byId('galleryViewerImage');
   const original=byId('galleryOriginal'), deletionRequest=byId('galleryDeletionRequest');
   const requestStatus=byId('galleryRequestStatus');
-  const submittedRequests=new Set();
-  let displayedPhoto='', submittingRequest=false;
-  function showRequestResult(message){
+  let displayedPhoto='';
+  function seconds(milliseconds){return (milliseconds/1000).toFixed(1);}
+  function operationText(operation,labels){
+    if(!operation)return '';
+    const elapsed=seconds(operation.elapsed??(performance.now()-operation.start));
+    if(operation.state==='pending')return labels.pending+'　'+elapsed+' 秒';
+    if(operation.state==='success')return labels.success+'（'+elapsed+' 秒）';
+    return operation.error+'（'+elapsed+' 秒）';
+  }
+  const deletionLabels={pending:'削除中…',success:'削除しました。'};
+  const submissionLabels={pending:'削除申請を送信中…',success:'削除申請しました。'};
+  async function runPhotoOperation(operations,id,action,paint){
+    const previous=operations.get(id);
+    if(previous&&previous.state!=='error')return;
+    const operation={state:'pending',start:performance.now()};
+    operations.set(id,operation);
+    paint(id);
+    const timer=setInterval(()=>paint(id),100);
+    try{
+      await action();
+      operation.state='success';
+    }catch(error){
+      operation.state='error';
+      operation.error=error.message||'処理できませんでした。';
+    }finally{
+      operation.elapsed=performance.now()-operation.start;
+      clearInterval(timer);
+      paint(id);
+    }
+  }
+  function paintDeletion(id){
+    const operation=deletions.get(id);
+    const unavailable=operation&&operation.state!=='error';
+    const completed=operation?.state==='success';
+    for(const output of document.querySelectorAll('[data-gallery-delete-time="'+id+'"]')){
+      output.textContent=operationText(operation,deletionLabels);
+      const actions=output.parentElement;
+      const button=actions.querySelector('[data-gallery-delete],[data-gallery-approve]');
+      button.disabled=Boolean(unavailable);
+      if(completed){
+        const preview=output.closest('article').querySelector('[data-gallery-view]');
+        if(preview)preview.disabled=true;
+      }
+    }
+  }
+  function deletePhoto(id){
+    return runPhotoOperation(deletions,id,async()=>{
+      await api('photos/'+encodeURIComponent(id),'DELETE');
+      firstPages.clear();
+    },paintDeletion);
+  }
+  function paintRequest(id){
+    const operation=submissions.get(id);
+    const message=operationText(operation,submissionLabels);
+    for(const output of list.querySelectorAll('[data-gallery-request-time="'+id+'"]')){
+      output.textContent=message;
+      output.hidden=!message;
+    }
+    if(id!==displayedPhoto)return;
+    requestStatus.setAttribute('aria-live',operation?.state==='pending'?'off':'polite');
     requestStatus.textContent=message;
     requestStatus.hidden=!message;
+    deletionRequest.setAttribute('aria-disabled',String(Boolean(operation&&operation.state!=='error')));
   }
   viewer.addEventListener('close',()=>{
     displayedPhoto='';
     enlarged.removeAttribute('src');
     original.removeAttribute('href');
   });
-  deletionRequest.onclick=async event=>{
+  deletionRequest.onclick=event=>{
     event.preventDefault();
     const photoId=displayedPhoto;
-    if(!photoId||submittingRequest||submittedRequests.has(photoId))return;
+    const operation=submissions.get(photoId);
+    if(!photoId||(operation&&operation.state!=='error'))return;
     if(!confirm('この写真の削除を運営に申請しますか？'))return;
-    submittingRequest=true;
-    deletionRequest.setAttribute('aria-disabled','true');
-    showRequestResult('削除申請を送信中…');
-    try{
-      await api('photos?deletionRequests=1','POST',{photoId});
-      submittedRequests.add(photoId);
-      if(displayedPhoto===photoId)showRequestResult('削除申請しました。');
-    }catch(error){
-      if(displayedPhoto===photoId)showRequestResult(error.message);
-    }finally{
-      submittingRequest=false;
-      deletionRequest.setAttribute('aria-disabled',String(submittedRequests.has(displayedPhoto)));
-    }
+    void runPhotoOperation(submissions,photoId,()=>api('photos?deletionRequests=1','POST',{photoId}),paintRequest);
   };
   async function openGalleryPhoto(preview,feedback,sourceDialog){
     const image=preview.querySelector('img');
@@ -1545,9 +1596,7 @@ function initPhotoGallery(manage=false){
       original.href=url;
       original.download=image.dataset.filename;
       displayedPhoto=image.dataset.galleryImage;
-      const submitted=submittedRequests.has(displayedPhoto);
-      deletionRequest.setAttribute('aria-disabled',String(submitted||submittingRequest));
-      showRequestResult(submitted?'削除申請しました。':'');
+      paintRequest(displayedPhoto);
       if(!viewer.open)viewer.showModal();
     }finally{preview.disabled=false;}
   }
@@ -1558,10 +1607,7 @@ function initPhotoGallery(manage=false){
     if(chip){toggleSearchTag(chip.dataset.galleryTag);return;}
     const remove=event.target.closest('[data-gallery-delete]');
     if(!manage||!remove||!confirm('この写真をギャラリーから削除しますか？'))return;
-    remove.disabled=true;
-    try{await api('photos/'+encodeURIComponent(remove.dataset.galleryDelete),'DELETE');firstPages.clear();await load();}
-    catch(error){status.textContent=error.message;}
-    finally{remove.disabled=false;}
+    void deletePhoto(remove.dataset.galleryDelete);
   };
   if(manage){
     const requestDialog=byId('galleryRequestListDialog'), requestsList=byId('galleryRequestsList');
@@ -1585,6 +1631,7 @@ function initPhotoGallery(manage=false){
           <div class="feature-links">
             <button class="secondary" type="button" data-gallery-view style="display:grid;gap:6px;width:min(100%,220px);padding:6px"><img alt="${esc(photo.filename)}" data-gallery-image="${esc(photo.id)}" data-filename="${esc(photo.filename)}" data-saved-at="${esc(photo.savedAt||'')}"${photo.hasThumbnail?' data-thumbnail':''} decoding="async" style="display:block;width:100%;aspect-ratio:4/3;object-fit:contain;background:#f3f7fb;border-radius:8px"><span>写真を拡大</span></button>
             <button class="secondary" type="button" data-gallery-approve="${esc(photo.id)}">写真を削除</button>
+            <output class="hint" data-gallery-delete-time="${esc(photo.id)}" aria-live="off"></output>
           </div>
         </article>`).join('');
         requestsList.insertAdjacentHTML('beforeend',cards);
@@ -1593,6 +1640,7 @@ function initPhotoGallery(manage=false){
           if(imageObserver)imageObserver.observe(image);
           else void loadGalleryImage(image);
         }
+        for(const id of deletions.keys())paintDeletion(id);
         cursor=page.next;
         requestMore.hidden=!cursor;
         requestsStatus.textContent=requestsList.children.length?'':'削除申請はありません。';
@@ -1613,14 +1661,7 @@ function initPhotoGallery(manage=false){
       if(preview){await openGalleryPhoto(preview,requestsStatus,requestDialog);return;}
       const remove=event.target.closest('[data-gallery-approve]');
       if(!remove||!confirm('申請された写真をギャラリーから削除しますか？'))return;
-      remove.disabled=true;
-      try{
-        await api('photos/'+encodeURIComponent(remove.dataset.galleryApprove),'DELETE');
-        firstPages.clear();
-        await refreshRequests();
-        await load();
-      }catch(error){requestsStatus.textContent=error.message;}
-      finally{remove.disabled=false;}
+      void deletePhoto(remove.dataset.galleryApprove);
     };
   }
   const form=byId('galleryUpload'), input=byId('galleryFiles'), labels=byId('galleryTags'), result=byId('galleryUploadStatus');
